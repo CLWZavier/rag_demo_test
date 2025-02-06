@@ -170,8 +170,8 @@ def create_ui():
                     
                     max_pages_input = gr.Slider(
                         minimum=1,
-                        maximum=50,
-                        value=20,
+                        maximum=1000,
+                        value=100,
                         step=10,
                         label="Max pages to extract and index"
                     )
