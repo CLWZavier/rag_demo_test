@@ -150,44 +150,50 @@ class PDFSearchApp:
 def create_ui():
     index_list = middleware.list_index()
     app = PDFSearchApp(index_list)
+
+    textarea_css = """
+    textarea, input[type="text"] {
+        background-color: white !important;
+    }
+    """
     
-    with gr.Blocks() as demo:
+    with gr.Blocks(theme='allenai/gradio-theme', css=textarea_css) as demo:
         state = gr.State(value={"user_uuid": None})
 
         gr.Markdown("# Colpali Milvus Multimodal RAG Demo")
         gr.Markdown("This demo showcases how to use [Colpali](https://github.com/illuin-tech/colpali) embeddings with [Milvus](https://milvus.io/) and utilizing Gemini/OpenAI multimodal RAG for pdf search and Q&A.")
         
         with gr.Tab("Upload PDF"):
-            with gr.Column():
-                file_input = gr.File(label="Upload PDF")
-                
-                max_pages_input = gr.Slider(
-                    minimum=1,
-                    maximum=50,
-                    value=20,
-                    step=10,
-                    label="Max pages to extract and index"
-                )
-                
-                status = gr.Textbox(label="Indexing Status", interactive=False)
+            with gr.Row():
+                with gr.Column():
+                    file_input = gr.File(label="Upload PDF")
+                    
+                    max_pages_input = gr.Slider(
+                        minimum=1,
+                        maximum=50,
+                        value=20,
+                        step=10,
+                        label="Max pages to extract and index"
+                    )
+                    
+                    status = gr.Textbox(label="Indexing Status", interactive=False)
 
-                # df = pd.DataFrame([file.replace("pages/", "", 1) for file in index_list], columns=["PDF Files"])
+                    # df = pd.DataFrame([file.replace("pages/", "", 1) for file in index_list], columns=["PDF Files"])
 
-                # gr.DataFrame(df)
+                    # gr.DataFrame(df)
 
-                # Use DataFrame with interactive=False (static table)
-                file_table = gr.DataFrame(
-                    headers=["PDF Files"],
-                    value=get_pdf_files(),
-                    interactive=True,
-                    # label="Select a PDF (Click on a row)"
-                )
+                    # Use DataFrame with interactive=False (static table)
+                    file_table = gr.DataFrame(
+                        headers=["PDF Files"],
+                        value=get_pdf_files(),
+                        interactive=True,
+                        # label="Select a PDF (Click on a row)"
+                    )
 
-                with gr.Row():
+                with gr.Column():
                     page_slider = gr.Slider(1, 10, value=1, step=1, label="Page")
                     image_display = gr.Image(label="PDF Page", interactive=False)
-
-                selected_pdf = gr.Textbox(visible=True)  # Hidden textbox to store selected PDF name
+                    selected_pdf = gr.Textbox(visible=False)  # Hidden textbox to store selected PDF name
 
                 # Function to handle row selection
                 def on_select(evt: gr.SelectData):
@@ -208,19 +214,21 @@ def create_ui():
                 
         
         with gr.Tab("Query"):
-            with gr.Column():
-                query_input = gr.Textbox(label="Enter query")
-                # num_results = gr.Slider(
-                #     minimum=1,
-                #     maximum=10,
-                #     value=5,
-                #     step=1,
-                #     label="Number of results"
-                # )
-                search_btn = gr.Button("Query")
-                # llm_answer = gr.Textbox(label="RAG Response", interactive=False)
-                llm_answer = gr.Markdown(label="RAG_Response", show_copy_button=True, container=True)
-                images = gr.Image(label="Top page matching query")
+            with gr.Row():
+                with gr.Column():
+                    query_input = gr.Textbox(label="Enter query")
+                    # num_results = gr.Slider(
+                    #     minimum=1,
+                    #     maximum=10,
+                    #     value=5,
+                    #     step=1,
+                    #     label="Number of results"
+                    # )
+                    search_btn = gr.Button("Query")
+                    # llm_answer = gr.Textbox(label="RAG Response", interactive=False)
+                    llm_answer = gr.Markdown(label="RAG_Response", show_copy_button=True, container=True)
+                with gr.Column():
+                    images = gr.Image(label="Top page matching query")
         
         # Event handlers
         file_input.change(
@@ -230,6 +238,12 @@ def create_ui():
         )
         
         search_btn.click(
+            fn=app.search_documents,
+            inputs=[state, query_input],
+            outputs=[images, llm_answer]
+        )
+
+        query_input.submit(
             fn=app.search_documents,
             inputs=[state, query_input],
             outputs=[images, llm_answer]
