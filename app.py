@@ -16,6 +16,7 @@ from rag import Rag
 from pathlib import Path
 from pymilvus import connections, utility
 from utils import get_pdf_files, get_pdf_image, update_image, get_image_count
+from PIL import Image
 
 rag = Rag()
 
@@ -85,67 +86,76 @@ class PDFSearchApp:
         else:
             self.indexed_docs = {}
 
-    def upload_and_convert(self, state, file, max_pages):
-        # id = generate_uuid(state)
+    def search_documents(self, state, query):
+        print(f"Searching for query: {query}")
+        
+        if not self.indexed_docs:
+            return (None, []), "Please index documents first"
+        if not query:
+            return (None, []), "Please enter a search query"
+            
+        try:
+            search_results = middleware.search([query])[0]
+            doc = search_results[0][2]
+            page_num = search_results[0][1] + 1
+            max_indices = search_results[0][3]
 
+            img_path = f"{doc}/page_{page_num}.png"
+            img_path = os.path.join(*img_path.split("/"))
+
+            print("\nMAX INDICES = {max_indices}\n")
+
+            # Open image as PIL.Image
+            img = Image.open(img_path)
+            width, height = img.size
+            patch_size = 60
+            
+            # Create annotations exactly as specified in Gradio docs:
+            # List[Tuple[Tuple[int, int, int, int], str]]
+            annotations = []
+            patches_per_row = width // patch_size
+            for seq_id in max_indices:
+                row = seq_id // patches_per_row
+                col = seq_id % patches_per_row
+                x1 = col * patch_size
+                y1 = row * patch_size
+                x2 = x1 + patch_size
+                y2 = y1 + patch_size
+                # Each annotation is Tuple[Mask, str] where Mask is Tuple[int, int, int, int]
+                bbox = (x1, y1, x2, y2)  # The mask as a tuple of 4 ints
+                label = ""  # The label as a str
+                annotations.append((bbox, label))
+            print(f"\nAnnotations = {annotations}\n")
+            rag_response = rag.get_answer_from_llama(query, [img_path], model, processor)
+
+            # Return tuple[Image, list[Annotation]] as specified in docs
+            return (img_path, annotations), rag_response
+            
+        except Exception as e:
+            print(f"Search error: {str(e)}")
+            # Return empty tuple with correct structure on error
+            return (None, []), f"Error during search: {str(e)}"
+
+    def upload_and_convert(self, state, file, max_pages):
         if file is None:
             return "No file uploaded"
 
         file_name = get_pdf_file_name(file.name)
-
         id = file_name
         state["id"] = id
+        
         try:
             if self.indexed_docs and id in self.indexed_docs:
                 return f"Document {file_name} already indexed."
         except Exception as e:
             return f"Error processing PDF: {str(e)}"
 
-        print(f"\nfile = {file_name}\n")
-        print(f"Uploading file: {file_name}, id: {file_name}")
-            
         try:
             pages = middleware.index(pdf_path=file.name, id=file_name, max_pages=max_pages)
-
             self.indexed_docs[id] = True
-            
             return f"Uploaded and extracted {len(pages)} pages"
         except Exception as e:
             return f"Error processing PDF: {str(e)}"
-    
-    
-    def search_documents(self, state, query, num_results=1):
-        print(f"Searching for query: {query}")
-        # id = generate_uuid(state)
-
-        print(f"===\nIndexed docs: {self.indexed_docs}\n===")
-        
-        if not self.indexed_docs:
-            print("Please index documents first")
-            return "Please index documents first", "--"
-        if not query:
-            print("Please enter a search query")
-            return "Please enter a search query", "--"
-            
-        try:
-            search_results = middleware.search([query])[0]
-            
-            doc_id = search_results[0][2]
-            page_num = search_results[0][1] + 1
-
-            print(f"Retrieved page number: {page_num}")
-
-            img_path = f"{doc_id}/page_{page_num}.png"
-            img_path = os.path.join(*img_path.split("/"))
-
-            print(f"Retrieved image path: {img_path}")
-
-            rag_response = rag.get_answer_from_llama(query, [img_path], model, processor)
-
-            return img_path, rag_response
-            
-        except Exception as e:
-            return f"Error during search: {str(e)}", "--"
 
 def create_ui():
     index_list = middleware.list_index()
@@ -167,68 +177,33 @@ def create_ui():
             with gr.Row():
                 with gr.Column():
                     file_input = gr.File(label="Upload PDF")
-                    
                     max_pages_input = gr.Slider(
                         minimum=1,
-                        maximum=50,
-                        value=20,
+                        maximum=1000,
+                        value=100,
                         step=10,
                         label="Max pages to extract and index"
                     )
-                    
                     status = gr.Textbox(label="Indexing Status", interactive=False)
-
-                    # df = pd.DataFrame([file.replace("pages/", "", 1) for file in index_list], columns=["PDF Files"])
-
-                    # gr.DataFrame(df)
-
-                    # Use DataFrame with interactive=False (static table)
                     file_table = gr.DataFrame(
                         headers=["PDF Files"],
                         value=get_pdf_files(),
-                        interactive=True,
-                        # label="Select a PDF (Click on a row)"
+                        interactive=True
                     )
 
                 with gr.Column():
                     page_slider = gr.Slider(1, 10, value=1, step=1, label="Page")
                     image_display = gr.Image(label="PDF Page", interactive=False)
-                    selected_pdf = gr.Textbox(visible=False)  # Hidden textbox to store selected PDF name
-
-                # Function to handle row selection
-                def on_select(evt: gr.SelectData):
-                    pdf_name = evt.value  # Extract filename from DataFrame row
-                    image_path, total_pages = get_pdf_image(pdf_name), get_image_count(pdf_name)
-                    max_pages = total_pages if total_pages > 0 else 1
-                    page_slider = gr.Slider(1, max_pages, value=1, step=1, label="Page")
-
-                    return image_path, pdf_name, page_slider
-
-
-                # File selection updates image and slider
-                file_table.select(on_select, None, [image_display, selected_pdf, page_slider])
-
-                # Page slider updates image
-                page_slider.change(update_image, [selected_pdf, page_slider], image_display)
-            
-                
+                    selected_pdf = gr.Textbox(visible=False)
         
         with gr.Tab("Query"):
             with gr.Row():
                 with gr.Column():
                     query_input = gr.Textbox(label="Enter query")
-                    # num_results = gr.Slider(
-                    #     minimum=1,
-                    #     maximum=10,
-                    #     value=5,
-                    #     step=1,
-                    #     label="Number of results"
-                    # )
                     search_btn = gr.Button("Query")
-                    # llm_answer = gr.Textbox(label="RAG Response", interactive=False)
-                    llm_answer = gr.Markdown(label="RAG_Response", show_copy_button=True, container=True)
+                    llm_answer = gr.Markdown(label="RAG Response", container=True, show_copy_button=True)
                 with gr.Column():
-                    images = gr.Image(label="Top page matching query")
+                    images = gr.AnnotatedImage(label="Top page with relevant patches")
         
         # Event handlers
         file_input.change(
@@ -248,6 +223,16 @@ def create_ui():
             inputs=[state, query_input],
             outputs=[images, llm_answer]
         )
+
+        # File selection handler
+        def on_select(evt: gr.SelectData):
+            pdf_name = evt.value
+            image_path, total_pages = get_pdf_image(pdf_name), get_image_count(pdf_name)
+            max_pages = total_pages if total_pages > 0 else 1
+            return image_path, pdf_name, gr.Slider(1, max_pages, value=1, step=1, label="Page")
+
+        file_table.select(on_select, None, [image_display, selected_pdf, page_slider])
+        page_slider.change(update_image, [selected_pdf, page_slider], image_display)
     
     return demo
 

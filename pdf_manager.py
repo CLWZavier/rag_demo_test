@@ -19,7 +19,10 @@ class PdfManager:
         output_folder = f"pages/{id}/"
         output_folder_path = Path(output_folder)
         images = convert_from_path(pdf_path)
-
+        
+        width, height = images[0].size
+        print(f"Page dimensions: {width}x{height}")
+        
         # Check if the folder exists and contains images
         if output_folder_path.exists() and any(output_folder_path.glob("*.png")):
             print(f"Skipping saving images; folder '{output_folder}' already exists with images.")

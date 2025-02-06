@@ -114,7 +114,7 @@ class MilvusManager:
         results = self.client.search(
             self.collection_name,
             data,
-            limit=int(50),
+            limit=int(500),
             output_fields=["vector", "seq_id", "doc_id", "doc"],
             search_params=search_params,
         )
@@ -128,6 +128,7 @@ class MilvusManager:
 
         scores = []
 
+        # In milvus_manager.py's rerank_single_doc function
         def rerank_single_doc(doc_id, data, client, collection_name):
             doc_colbert_vecs = client.query(
                 collection_name=collection_name,
@@ -138,8 +139,10 @@ class MilvusManager:
             doc_vecs = np.vstack(
                 [doc_colbert_vecs[i]["vector"] for i in range(len(doc_colbert_vecs))]
             )
-            score = np.dot(data, doc_vecs.T).max(1).sum()
-            return (score, doc_id)
+            dot_product = np.dot(data, doc_vecs.T)
+            max_indices = np.argmax(dot_product, axis=1).tolist()
+            score = np.max(dot_product, axis=1).sum()
+            return (score, doc_id, max_indices)
 
         with concurrent.futures.ThreadPoolExecutor(max_workers=300) as executor:
             futures = {
@@ -149,8 +152,8 @@ class MilvusManager:
                 for doc_id in doc_ids
             }
             for future in concurrent.futures.as_completed(futures):
-                score, doc_id = future.result()
-                scores.append((score, doc_id, doc_paths[doc_id]))
+                score, doc_id, max_indices = future.result()
+                scores.append((score, doc_id, doc_paths[doc_id], max_indices))
 
         # self.disconnect()
 
