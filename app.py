@@ -89,19 +89,16 @@ class PDFSearchApp:
         # id = generate_uuid(state)
 
         if file is None:
-            return "No file uploaded"
+            return "No file uploaded", get_pdf_files()
 
         file_name = get_pdf_file_name(file.name)
 
         id = file_name
         state["id"] = id
-        try:
-            if self.indexed_docs and id in self.indexed_docs:
-                return f"Document {file_name} already indexed."
-        except Exception as e:
-            return f"Error processing PDF: {str(e)}"
 
-        print(f"\nfile = {file_name}\n")
+        if self.indexed_docs and id in self.indexed_docs:
+            return f"Document {file_name} already indexed."
+
         print(f"Uploading file: {file_name}, id: {file_name}")
             
         try:
@@ -109,7 +106,7 @@ class PDFSearchApp:
 
             self.indexed_docs[id] = True
             
-            return f"Uploaded and extracted {len(pages)} pages"
+            return f"Uploaded and extracted {len(pages)} pages", get_pdf_files()
         except Exception as e:
             return f"Error processing PDF: {str(e)}"
     
@@ -166,7 +163,7 @@ def create_ui():
         with gr.Tab("Upload PDF"):
             with gr.Row():
                 with gr.Column():
-                    file_input = gr.File(label="Upload PDF")
+                    file_input = gr.File(label="Upload PDF", interactive=True)
                     
                     max_pages_input = gr.Slider(
                         minimum=1,
@@ -234,7 +231,7 @@ def create_ui():
         file_input.change(
             fn=app.upload_and_convert,
             inputs=[state, file_input, max_pages_input],
-            outputs=[status]
+            outputs=[status, file_table]
         )
         
         search_btn.click(
