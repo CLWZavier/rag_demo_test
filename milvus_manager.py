@@ -5,49 +5,16 @@ import os
 
 class MilvusManager:
     def __init__(self, milvus_uri, collection_name, create_collection, dim=128):
-        # self.client = MilvusClient(uri=milvus_uri)
-        # self.collection_name = collection_name
-        # if self.client.has_collection(collection_name=self.collection_name):
-        #     self.client.load_collection(collection_name)
-        # self.dim = dim
-
-        # if create_collection:
-        #     self.create_collection()
-        #     self.create_index()
-        self.milvus_uri = milvus_uri
+        self.client = MilvusClient(uri=milvus_uri)
         self.collection_name = collection_name
-        self.create_collection = create_collection
         self.dim = dim
-        self.connected = False
-        self.connect(milvus_uri, collection_name, create_collection, dim)
-
-    def connect(self, milvus_uri, collection_name, create_collection, dim):
-        try:
-            self.client = MilvusClient(uri=milvus_uri)
-            self.collection_name = collection_name
-            self.dim = dim
-            if self.client.has_collection(collection_name=self.collection_name):
-                print(f"Collection {collection_name} already exists. Loading {collection_name}")
-                self.client.load_collection(collection_name)
-            else:
-                if create_collection:
-                    self.create_collection()
-                    self.create_index()
-            self.connected = True
-            return True
-        except Exception as e:
-            print(f"Error connecting to Milvus: {e}")
-            self.connected = False
-            return False
-    
-    def disconnect(self):
-        if hasattr(self, "client") and self.client:
-            try:
-                self.client.close()
-                print("Disconnected from Milvus.")
-            except Exception as e:
-                print(f"Error disconnecting from Milvus: {e}")
-
+        if self.client.has_collection(collection_name=self.collection_name):
+            print(f"Collection {collection_name} already exists. Loading {collection_name}")
+            self.client.load_collection(collection_name)
+        else:
+            if create_collection:
+                self.create_collection()
+                self.create_index()
 
     def create_collection(self):
         if self.client.has_collection(collection_name=self.collection_name):
@@ -77,11 +44,11 @@ class MilvusManager:
         index_params.add_index(
             field_name="vector",
             index_name="vector_index",
-            index_type="HNSW", 
-            metric_type="IP", 
+            index_type="HNSW",
+            metric_type="COSINE",  # Changed to COSINE for better semantic matching
             params={
-                "M": 16,
-                "efConstruction": 500,
+                "M": 48,
+                "efConstruction": 800,
             },
         )
 
@@ -89,91 +56,94 @@ class MilvusManager:
             collection_name=self.collection_name, index_params=index_params, sync=True
         )
 
-    def create_scalar_index(self):
-        self.client.release_collection(collection_name=self.collection_name)
-
-        index_params = self.client.prepare_index_params()
-        index_params.add_index(
-            field_name="doc_id",
-            index_name="int32_index",
-            index_type="INVERTED",
-        )
-
-        self.client.create_index(
-            collection_name=self.collection_name, index_params=index_params, sync=True
-        )
-
     def search(self, data, topk):
-        try:
-            if not self.connected:
-                self.connect(self.milvus_uri, self.collection_name, self.create_collection, self.dim)
-        except Exception as e:
-            print(f"Error reconnecting to Milvus for search: {e}")
-
-        search_params = {"metric_type": "IP", "params": {}}
+        search_params = {
+            "metric_type": "COSINE",
+            "params": {
+                "ef": 400,
+                "nprobe": 16
+            }
+        }
+        
+        # Initial search with higher limit to get a good candidate pool
         results = self.client.search(
             self.collection_name,
             data,
-            limit=int(50),
+            limit=topk,
             output_fields=["vector", "seq_id", "doc_id", "doc"],
             search_params=search_params,
         )
+
+        print(f"len of results = {len(results)}")
+
+        # Collect unique doc_ids and their paths
         doc_ids = set()
         doc_paths = {}
         for r_id in range(len(results)):
-            for r in range(len(results[r_id])):
-                doc_id = results[r_id][r]["entity"]["doc_id"]
+            for r in results[r_id]:
+                doc_id = r["entity"]["doc_id"]
                 doc_ids.add(doc_id)
-                doc_paths[doc_id] = results[r_id][r]["entity"]["doc"]
+                doc_paths[doc_id] = r["entity"]["doc"]
+        
+        print(f"doc_ids = {doc_ids}")
+        print(f"doc_paths = {doc_paths}")
 
+        # Rerank across all documents
         scores = []
+        with concurrent.futures.ThreadPoolExecutor(max_workers=min(len(doc_ids), 32)) as executor:
+            futures = []
+            for doc_id in doc_ids:
+                future = executor.submit(
+                    self._rerank_doc, 
+                    doc_id=doc_id,
+                    query_vector=data,
+                    doc_path=doc_paths[doc_id]
+                )
+                futures.append(future)
 
-        def rerank_single_doc(doc_id, data, client, collection_name):
-            doc_colbert_vecs = client.query(
-                collection_name=collection_name,
-                filter=f"doc_id in [{doc_id}, {doc_id + 1}]",
-                output_fields=["seq_id", "vector", "doc"],
-                limit=1000,
-            )
-            doc_vecs = np.vstack(
-                [doc_colbert_vecs[i]["vector"] for i in range(len(doc_colbert_vecs))]
-            )
-            score = np.dot(data, doc_vecs.T).max(1).sum()
-            return (score, doc_id)
-
-        with concurrent.futures.ThreadPoolExecutor(max_workers=300) as executor:
-            futures = {
-                executor.submit(
-                    rerank_single_doc, doc_id, data, self.client, self.collection_name
-                ): doc_id
-                for doc_id in doc_ids
-            }
             for future in concurrent.futures.as_completed(futures):
-                score, doc_id = future.result()
-                scores.append((score, doc_id, doc_paths[doc_id]))
-
-        # self.disconnect()
+                try:
+                    score, doc_id, doc_path = future.result()
+                    scores.append((score, doc_id, doc_path))
+                except Exception as e:
+                    print(f"Error in reranking: {e}")
+                    continue
 
         scores.sort(key=lambda x: x[0], reverse=True)
-        if len(scores) >= topk:
-            return scores[:topk]
-        else:
-            return scores
+        return scores[:topk]
+
+    def _rerank_doc(self, doc_id, query_vector, doc_path):
+        """Rerank a single document's pages against the query"""
+        # Get vectors for this document
+        doc_vectors = self.client.query(
+            collection_name=self.collection_name,
+            filter=f"doc_id == {doc_id}",
+            output_fields=["vector"],
+            limit=10
+        )
+        
+        if not doc_vectors:
+            return (0, doc_id, doc_path)
+
+        # Stack vectors and compute similarities
+        doc_vecs = np.vstack([d["vector"] for d in doc_vectors])
+        similarities = np.dot(query_vector, doc_vecs.T)
+        
+        # Take max similarity as the score
+        score = similarities.max(1).mean()
+        
+        return score, doc_id, doc_path
 
     def insert(self, data):
-        try:
-            if not self.connected:
-                self.connect(self.milvus_uri, self.collection_name, self.create_collection, self.dim)
-        except Exception as e:
-            print(f"Error reconnecting to Milvus for search: {e}")
-
         colbert_vecs = [vec for vec in data["colbert_vecs"]]
         seq_length = len(colbert_vecs)
-        doc_ids = [data["doc_id"] for i in range(seq_length)]
+        
+        # Normalize vectors for cosine similarity
+        colbert_vecs = [vec / np.linalg.norm(vec) for vec in colbert_vecs]
+        
+        doc_ids = [data["doc_id"] for _ in range(seq_length)]
         seq_ids = list(range(seq_length))
-
-        # Assign the correct "doc" values for every entry
-        docs = [f"{os.path.dirname(data['filepath'])}" for i in range(seq_length)]
+        docs = [os.path.dirname(data["filepath"]) for _ in range(seq_length)]
 
         self.client.insert(
             self.collection_name,
@@ -187,7 +157,6 @@ class MilvusManager:
                 for i in range(seq_length)
             ],
         )
-
 
     def get_images_as_doc(self, images_with_vectors:list):
         
@@ -205,11 +174,11 @@ class MilvusManager:
 
 
     def insert_images_data(self, image_data):
-        try:
-            if not self.connected:
-                self.connect(self.milvus_uri, self.collection_name, self.create_collection, self.dim)
-        except Exception as e:
-            print(f"Error reconnecting to Milvus for search: {e}")
+        # try:
+        #     if not self.connected:
+        #         self.connect(self.milvus_uri, self.collection_name, self.create_collection, self.dim)
+        # except Exception as e:
+        #     print(f"Error reconnecting to Milvus for search: {e}")
         data = self.get_images_as_doc(image_data)
 
         for i in range(len(data)):
@@ -219,11 +188,11 @@ class MilvusManager:
         """
         Retrieve all indexed file names from Milvus.
         """
-        try:
-            if not self.connected:
-                self.connect(self.milvus_uri, self.collection_name, self.create_collection, self.dim)
-        except Exception as e:
-            print(f"Error reconnecting to Milvus for search: {e}")
+        # try:
+        #     if not self.connected:
+        #         self.connect(self.milvus_uri, self.collection_name, self.create_collection, self.dim)
+        # except Exception as e:
+        #     print(f"Error reconnecting to Milvus for search: {e}")
         
         # Retrieve only the 'doc' field from the database (which stores file paths)
         results = self.client.query(
