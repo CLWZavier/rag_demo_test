@@ -139,7 +139,9 @@ class PDFSearchApp:
 
             rag_response = rag.get_answer_from_llama(query, [img_path], model, processor)
 
-            return img_path, rag_response
+            citation = f"Document: {doc_id}, Page: {page_num}"
+
+            return img_path, rag_response, citation
             
         except Exception as e:
             return f"Error during search: {str(e)}", "--"
@@ -226,6 +228,7 @@ def create_ui():
                     llm_answer = gr.Markdown(label="RAG_Response", show_copy_button=True, container=True)
                 with gr.Column():
                     images = gr.Image(label="Top page matching query")
+                    citation = gr.Textbox(label="Citation", container=True, interactive=False)
         
         # Event handlers
         file_input.change(
@@ -237,13 +240,13 @@ def create_ui():
         search_btn.click(
             fn=app.search_documents,
             inputs=[state, query_input],
-            outputs=[images, llm_answer]
+            outputs=[images, llm_answer, citation]
         )
 
         query_input.submit(
             fn=app.search_documents,
             inputs=[state, query_input],
-            outputs=[images, llm_answer]
+            outputs=[images, llm_answer, citation]
         )
     
     return demo
