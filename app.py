@@ -160,7 +160,7 @@ def create_ui():
         state = gr.State(value={"user_uuid": None})
 
         gr.Markdown("# Colpali Milvus Multimodal RAG Demo")
-        gr.Markdown("This demo showcases how to use [Colpali](https://github.com/illuin-tech/colpali) embeddings with [Milvus](https://milvus.io/) and utilizing Gemini/OpenAI multimodal RAG for pdf search and Q&A.")
+        # gr.Markdown("This demo showcases how to use [Colpali](https://github.com/illuin-tech/colpali) embeddings with [Milvus](https://milvus.io/) and utilizing Gemini/OpenAI multimodal RAG for pdf search and Q&A.")
         
         with gr.Tab("Upload PDF"):
             with gr.Row():

@@ -7,7 +7,7 @@ import time
 from PIL import Image
 from typing import List
 from utils import encode_image
-from PIL import Image
+from chat_templates import STRICT_MESSAGE, CREATIVE_MESSAGE, TEST_MESSAGE
 
 class Rag:
 
@@ -75,29 +75,7 @@ class Rag:
                 {
                     "role": "system",
                     "content": [
-                        {"type": "text", "text": """
-                            You are an AI assistant that answers questions SOLELY using visual information from the images provided in this query. Follow these rules:
-
-                            Strict Knowledge Boundary:
-
-                            Your response MUST ONLY contain facts, text, or patterns visible in the provided images
-
-                            Absolutely NO external knowledge, common sense, or pre-trained information
-
-                            Image-Based Reasoning:
-
-                            Describe only what can be directly observed (objects, text, relationships, quantities)
-
-                            If asked about abstract concepts, ground your response in specific visual evidence
-
-                            Unanswerable Scenarios:
-                            If any of these occur:
-                            a) Required information isn't visually present
-                            b) Image quality prevents reliable analysis
-                            c) Request requires external context
-                            → Respond: "I cannot answer this based on the provided images.
-                         """
-                         }
+                        {"type": "text", "text": TEST_MESSAGE}
                     ]
                 },
                 {
@@ -119,7 +97,8 @@ class Rag:
 
             print("Generating output...")
 
-            output = model.generate(**inputs, max_new_tokens=512, temperature=0.1)
+            output = model.generate(**inputs, max_new_tokens=1024, temperature=1.2)
+     
             num_input_tokens = inputs["input_ids"].shape[1]
             # cleaned_output = output[0, num_input_tokens : -1]
             result = processor.decode(output[0][num_input_tokens:], skip_special_tokens=True)
