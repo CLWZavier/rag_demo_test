@@ -171,7 +171,7 @@ class MilvusManager:
         """
         results = self.client.query(
             collection_name=self.collection_name,
-            filter="doc != ''",  # Retrieve all non-empty file paths
+            filter="seq_id == 0 AND doc_id == 0 AND doc != ''",
             output_fields=["doc"],
             limit=10000  # Adjust limit as needed
         )
