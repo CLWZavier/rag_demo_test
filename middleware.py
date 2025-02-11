@@ -48,7 +48,7 @@ class Middleware:
         return image_paths
 
         
-    def search(self, search_queries: list[str]):
+    def search(self, search_queries: list[str], num_results):
         print(f"Searching for {len(search_queries)} queries")
 
         final_res = []
@@ -56,7 +56,7 @@ class Middleware:
         for query in search_queries:
             print(f"Searching for query: {query}")
             query_vec = colpali_manager.process_text([query])[0]
-            search_res = self.milvus_manager.search(query_vec, topk=1)
+            search_res = self.milvus_manager.search(query_vec, topk=num_results)
             print(f"Search result: {search_res} for query: {query}")
             final_res.append(search_res)
 

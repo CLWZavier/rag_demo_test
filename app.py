@@ -39,7 +39,9 @@ model = MllamaForConditionalGeneration.from_pretrained(
 processor = AutoProcessor.from_pretrained(model_id)
 
 print(f"model memory = {model.get_memory_footprint()}")
+
 middleware = Middleware()
+
 def generate_uuid(state):
     # Check if UUID already exists in session state
     
@@ -111,7 +113,7 @@ class PDFSearchApp:
             return f"Error processing PDF: {str(e)}"
     
     
-    def search_documents(self, state, query, num_results=1):
+    def search_documents(self, state, query, num_results=3):
         print(f"Searching for query: {query}")
         # id = generate_uuid(state)
 
@@ -125,23 +127,34 @@ class PDFSearchApp:
             return "Please enter a search query", "--"
             
         try:
-            search_results = middleware.search([query])[0]
-            
-            doc_id = search_results[0][2]
-            page_num = search_results[0][1] + 1
+            img_paths = []
+            doc_ids = []
+            page_nums = []
+            search_results = middleware.search([query], num_results)[0]
 
-            print(f"Retrieved page number: {page_num}")
+            try:
+                for i in range(len(search_results)):
+                    doc_id = search_results[i][2]
+                    page_num = search_results[i][1] + 1
 
-            img_path = f"{doc_id}/page_{page_num}.png"
-            img_path = os.path.join(*img_path.split("/"))
+                    print(f"Retrieved page number: {page_num}")
 
-            print(f"Retrieved image path: {img_path}")
+                    img_path = f"{doc_id}/page_{page_num}.png"
+                    img_path = os.path.join(*img_path.split("/"))
 
-            rag_response = rag.get_answer_from_llama(query, [img_path], model, processor)
+                    print(f"Retrieved image path: {img_path}")
+                    img_paths.append(img_path)
+                    doc_ids.append(doc_id)
+                    page_nums.append(page_num)
+            except Exception as e:
+                return f"Error in for loop: {str(e)}"
 
-            citation = f"Document: {doc_id}, Page: {page_num}"
+            rag_response = rag.get_answer_from_llama(query, img_paths, model, processor, num_results)
 
-            return img_path, rag_response, citation
+            gallery_data = [(img_paths[i], f"Document: {doc_ids[i]}, Page: {page_nums[i]}") for i in range(len(img_paths))]
+            print(f"gallery data = {gallery_data}")
+            return gallery_data, rag_response
+
             
         except Exception as e:
             return f"Error during search: {str(e)}", "--"
@@ -216,19 +229,17 @@ def create_ui():
             with gr.Row():
                 with gr.Column():
                     query_input = gr.Textbox(label="Enter query")
-                    # num_results = gr.Slider(
-                    #     minimum=1,
-                    #     maximum=10,
-                    #     value=5,
-                    #     step=1,
-                    #     label="Number of results"
-                    # )
+                    num_results_slider = gr.Slider(
+                        minimum=1,
+                        maximum=10,
+                        value=3,
+                        step=1,
+                        label="Number of results"
+                    )
                     search_btn = gr.Button("Query")
-                    # llm_answer = gr.Textbox(label="RAG Response", interactive=False)
                     llm_answer = gr.Markdown(label="RAG_Response", show_copy_button=True, container=True)
                 with gr.Column():
-                    images = gr.Image(label="Top page matching query")
-                    citation = gr.Textbox(label="Citation", container=True, interactive=False)
+                    images = gr.Gallery(label="Top pages matching query", object_fit="contain")
         
         # Event handlers
         file_input.change(
@@ -239,14 +250,14 @@ def create_ui():
         
         search_btn.click(
             fn=app.search_documents,
-            inputs=[state, query_input],
-            outputs=[images, llm_answer, citation]
+            inputs=[state, query_input, num_results_slider],
+            outputs=[images, llm_answer]
         )
 
         query_input.submit(
             fn=app.search_documents,
-            inputs=[state, query_input],
-            outputs=[images, llm_answer, citation]
+            inputs=[state, query_input, num_results_slider],
+            outputs=[images, llm_answer]
         )
     
     return demo

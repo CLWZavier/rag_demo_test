@@ -7,7 +7,7 @@ import time
 from PIL import Image
 from typing import List
 from utils import encode_image
-from chat_templates import STRICT_MESSAGE, CREATIVE_MESSAGE, TEST_MESSAGE
+from chat_templates import STRICT_MESSAGE, CREATIVE_MESSAGE, TEST_MESSAGE, JAILBREAK_MESSAGE
 
 class Rag:
 
@@ -64,25 +64,25 @@ class Rag:
             print(f"An error occurred while querying OpenAI: {e}")
             return None
 
-    def get_answer_from_llama(self, query, imagePaths, model, processor):
+    def get_answer_from_llama(self, query, imagePaths, model, processor, topk=1):
         start_time = time.time()
-        print(f"Querying llama for query={query}, imagePaths={imagePaths}")
+        print(f"Querying llama for query={query}, topk={topk}, imagePaths={imagePaths}")
         
         try:    
-            images = [Image.open(path) for path in imagePaths]
+            images = [Image.open(path) for path in imagePaths[:topk]]
 
             messages = [
                 {
                     "role": "system",
                     "content": [
-                        {"type": "text", "text": TEST_MESSAGE}
+                        {"type": "text", "text": JAILBREAK_MESSAGE + TEST_MESSAGE}
                     ]
                 },
                 {
                     "role": "user", "content": [
-                    {"type": "image"},
-                    {"type": "text", "text": query}
-                ]
+                        *[{"type": "image"} for _ in images],
+                        {"type": "text", "text": query}
+                    ]
                 }
             ]
 
@@ -97,17 +97,15 @@ class Rag:
 
             print("Generating output...")
 
-            output = model.generate(**inputs, max_new_tokens=1024, temperature=1.2)
+            output = model.generate(**inputs, max_new_tokens=1024, temperature=0.5)
      
             num_input_tokens = inputs["input_ids"].shape[1]
-            # cleaned_output = output[0, num_input_tokens : -1]
             result = processor.decode(output[0][num_input_tokens:], skip_special_tokens=True)
             print(f"\noutput = {output}\n")
             # print(f"\nnum_input_tokens = {num_input_tokens}\n")
             # print(f"\ncleaned_output = {cleaned_output}\n")
 
             print(f"Generated output in {(time.time() - start_time)}s")
-
             print(result)
 
             return result
