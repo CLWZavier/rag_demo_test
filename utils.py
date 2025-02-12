@@ -8,6 +8,13 @@ def encode_image(image_path):
         return base64.b64encode(image_file.read()).decode('utf-8')
 
 def get_pdf_files():
+    """
+    Retrieves a list of PDF files from the specified image folder.
+
+    Returns:
+        list: A list of lists, each containing the basename of a PDF file found in the image folder.
+    """
+
     files = glob.glob(f"{IMAGE_FOLDER}/*.pdf")
     return [[os.path.basename(f)] for f in files]
 

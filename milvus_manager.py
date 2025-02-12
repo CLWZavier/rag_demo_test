@@ -148,6 +148,14 @@ class MilvusManager:
             ],
         )
 
+    def delete_doc(self, doc):
+        filter_str = f"doc == '{doc}'"
+        self.client.delete(
+            collection_name=self.collection_name,
+            filter=filter_str
+        )
+        print(f"Deleted document: {doc}")
+
     def get_images_as_doc(self, images_with_vectors: list):
         images_data = []
         for i in range(len(images_with_vectors)):

@@ -158,18 +158,44 @@ class PDFSearchApp:
             
         except Exception as e:
             return f"Error during search: {str(e)}", "--"
+    
+def delete_pdf(selected_pdf):
+    """Deletes a PDF file from local storage and Milvus."""
+    if not selected_pdf:
+        return "No PDF selected.", [pdf for sublist in get_pdf_files() for pdf in sublist]
+    
+    pdf_path = os.path.join("pages", selected_pdf)
+
+
+    # Delete from Milvus
+    middleware.milvus_manager.delete_doc("pages/" + selected_pdf)
+
+    # Only do this once deleted from milvus
+    if os.path.exists(pdf_path):
+        import shutil
+        shutil.rmtree(pdf_path)
+
+    return f"Deleted {selected_pdf}.", [pdf for sublist in get_pdf_files() for pdf in sublist]
 
 def create_ui():
     index_list = middleware.list_index()
     app = PDFSearchApp(index_list)
 
-    textarea_css = """
+    css = """
     textarea, input[type="text"] {
+        background-color: white !important;
+    }
+
+    .wrap.svelte-1hfxrpf.svelte-1hfxrpf {
+        background-color: white !important;
+    }
+    
+    .wrap-inner.svelte-1hfxrpf.svelte-1hfxrpf {
         background-color: white !important;
     }
     """
     
-    with gr.Blocks(theme='allenai/gradio-theme', css=textarea_css) as demo:
+    with gr.Blocks(theme='allenai/gradio-theme', css=css) as demo:
         state = gr.State(value={"user_uuid": None})
 
         gr.Markdown("# Colpali Milvus Multimodal RAG Demo")
@@ -194,13 +220,22 @@ def create_ui():
 
                     # gr.DataFrame(df)
 
-                    # Use DataFrame with interactive=False (static table)
                     file_table = gr.DataFrame(
                         headers=["PDF Files"],
                         value=get_pdf_files(),
                         interactive=True,
                         # label="Select a PDF (Click on a row)"
                     )
+                    
+                    with gr.Row():
+                            pdf_dropdown = gr.Dropdown(
+                                choices=[pdf for sublist in get_pdf_files() for pdf in sublist],
+                                label="Select PDF to Delete",
+                                filterable=True,
+                                container=True,
+                                scale=6,
+                            )
+                            delete_btn = gr.Button("Delete")
 
                 with gr.Column():
                     page_slider = gr.Slider(1, 10, value=1, step=1, label="Page")
@@ -223,7 +258,11 @@ def create_ui():
                 # Page slider updates image
                 page_slider.change(update_image, [selected_pdf, page_slider], image_display)
             
-                
+                delete_btn.click(
+                    fn=delete_pdf,
+                    inputs=pdf_dropdown,
+                    outputs=[status, pdf_dropdown]  # Updates status and refreshes dropdown
+                )
         
         with gr.Tab("Query"):
             with gr.Row():

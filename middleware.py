@@ -60,7 +60,6 @@ class Middleware:
             print(f"Search result: {search_res} for query: {query}")
             final_res.append(search_res)
 
-        print(f"\nFINAL RES = {final_res}\n")
         return final_res
 
     def list_index(self):
