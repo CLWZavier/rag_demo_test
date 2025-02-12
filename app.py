@@ -162,20 +162,42 @@ class PDFSearchApp:
 def delete_pdf(selected_pdf):
     """Deletes a PDF file from local storage and Milvus."""
     if not selected_pdf:
-        return "No PDF selected.", [pdf for sublist in get_pdf_files() for pdf in sublist]
+        return "No PDF selected.", None, None, None
     
     pdf_path = os.path.join("pages", selected_pdf)
 
+    try:
+        # Delete from Milvus
+        middleware.milvus_manager.delete_doc("pages/" + selected_pdf)
 
-    # Delete from Milvus
-    middleware.milvus_manager.delete_doc("pages/" + selected_pdf)
+        # Only do this once deleted from milvus
+        if os.path.exists(pdf_path):
+            import shutil
+            shutil.rmtree(pdf_path)
 
-    # Only do this once deleted from milvus
-    if os.path.exists(pdf_path):
-        import shutil
-        shutil.rmtree(pdf_path)
+        # Get updated list of PDFs
+        updated_files = get_pdf_files()
+        
+        # Create updated choices for dropdown
+        updated_choices = [pdf for sublist in updated_files for pdf in sublist]
+        
+        # Create updated DataFrame
+        updated_df = gr.DataFrame(value=updated_files, headers=["PDF Files"])
+        
+        # Create a new dropdown component with updated choices
+        updated_dropdown = gr.Dropdown(
+            choices=updated_choices,
+            label="Select PDF to Delete",
+            filterable=True,
+            container=True,
+            scale=6,
+            value=None  # Reset the selected value
+        )
 
-    return f"Deleted {selected_pdf}.", [pdf for sublist in get_pdf_files() for pdf in sublist]
+        return f"Deleted {selected_pdf} successfully.", updated_dropdown, updated_df, None
+
+    except Exception as e:
+        return f"Error deleting {selected_pdf}: {str(e)}", None, None, None
 
 def create_ui():
     index_list = middleware.list_index()
@@ -199,7 +221,6 @@ def create_ui():
         state = gr.State(value={"user_uuid": None})
 
         gr.Markdown("# Colpali Milvus Multimodal RAG Demo")
-        # gr.Markdown("This demo showcases how to use [Colpali](https://github.com/illuin-tech/colpali) embeddings with [Milvus](https://milvus.io/) and utilizing Gemini/OpenAI multimodal RAG for pdf search and Q&A.")
         
         with gr.Tab("Upload PDF"):
             with gr.Row():
@@ -216,52 +237,69 @@ def create_ui():
                     
                     status = gr.Textbox(label="Indexing Status", interactive=False)
 
-                    # df = pd.DataFrame([file.replace("pages/", "", 1) for file in index_list], columns=["PDF Files"])
-
-                    # gr.DataFrame(df)
-
                     file_table = gr.DataFrame(
                         headers=["PDF Files"],
                         value=get_pdf_files(),
-                        interactive=True,
-                        # label="Select a PDF (Click on a row)"
+                        interactive=False,
                     )
                     
                     with gr.Row():
-                            pdf_dropdown = gr.Dropdown(
-                                choices=[pdf for sublist in get_pdf_files() for pdf in sublist],
-                                label="Select PDF to Delete",
-                                filterable=True,
-                                container=True,
-                                scale=6,
-                            )
-                            delete_btn = gr.Button("Delete")
+                        current_files = [pdf for sublist in get_pdf_files() for pdf in sublist]
+                        pdf_dropdown = gr.Dropdown(
+                            choices=current_files,
+                            value=None,  # Set initial value to None
+                            label="Select PDF to Delete",
+                            filterable=True,
+                            container=True,
+                            scale=6,
+                        )
+                        delete_btn = gr.Button("Delete")
 
                 with gr.Column():
                     page_slider = gr.Slider(1, 10, value=1, step=1, label="Page")
                     image_display = gr.Image(label="PDF Page", interactive=False)
-                    selected_pdf = gr.Textbox(visible=False)  # Hidden textbox to store selected PDF name
+                    selected_pdf = gr.Textbox(visible=False)
 
-                # Function to handle row selection
                 def on_select(evt: gr.SelectData):
-                    pdf_name = evt.value  # Extract filename from DataFrame row
+                    pdf_name = evt.value
                     image_path, total_pages = get_pdf_image(pdf_name), get_image_count(pdf_name)
                     max_pages = total_pages if total_pages > 0 else 1
-                    page_slider = gr.Slider(1, max_pages, value=1, step=1, label="Page")
+                    return image_path, pdf_name, gr.Slider(1, max_pages, value=1, step=1, label="Page")
 
-                    return image_path, pdf_name, page_slider
+                # Update both dropdown and file table when a file is uploaded
+                def update_components(status_msg, file_list):
+                    current_files = [pdf for sublist in file_list for pdf in sublist]
+                    return (
+                        status_msg,
+                        gr.DataFrame(value=file_list, headers=["PDF Files"]),
+                        gr.Dropdown(
+                            choices=current_files,
+                            value=None,
+                            label="Select PDF to Delete",
+                            filterable=True,
+                            container=True,
+                            scale=6,
+                        )
+                    )
 
-
-                # File selection updates image and slider
                 file_table.select(on_select, None, [image_display, selected_pdf, page_slider])
-
-                # Page slider updates image
                 page_slider.change(update_image, [selected_pdf, page_slider], image_display)
-            
+                
+                # Update file upload handler
+                file_input.change(
+                    fn=app.upload_and_convert,
+                    inputs=[state, file_input, max_pages_input],
+                    outputs=[status, file_table]
+                ).then(
+                    fn=update_components,
+                    inputs=[status, file_table],
+                    outputs=[status, file_table]
+                )
+                
                 delete_btn.click(
                     fn=delete_pdf,
                     inputs=pdf_dropdown,
-                    outputs=[status, pdf_dropdown]  # Updates status and refreshes dropdown
+                    outputs=[status, pdf_dropdown, file_table, image_display]
                 )
         
         with gr.Tab("Query"):
