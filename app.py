@@ -102,13 +102,13 @@ class PDFSearchApp:
             return f"Document {file_name} already indexed."
 
         print(f"Uploading file: {file_name}, id: {file_name}")
-            
+
         try:
             pages = middleware.index(pdf_path=file.name, id=file_name, max_pages=max_pages)
 
             self.indexed_docs[id] = True
             
-            return f"Uploaded and extracted {len(pages)} pages", get_pdf_files()
+            return f"Uploaded and extracted {len(pages)} pages"
         except Exception as e:
             return f"Error processing PDF: {str(e)}"
     
@@ -267,11 +267,11 @@ def create_ui():
                     return image_path, pdf_name, gr.Slider(1, max_pages, value=1, step=1, label="Page")
 
                 # Update both dropdown and file table when a file is uploaded
-                def update_components(status_msg, file_list):
-                    current_files = [pdf for sublist in file_list for pdf in sublist]
+                def update_components(status_msg):
+                    current_files = [pdf for sublist in get_pdf_files() for pdf in sublist]
                     return (
                         status_msg,
-                        gr.DataFrame(value=file_list, headers=["PDF Files"]),
+                        get_pdf_files(),
                         gr.Dropdown(
                             choices=current_files,
                             value=None,
@@ -284,23 +284,6 @@ def create_ui():
 
                 file_table.select(on_select, None, [image_display, selected_pdf, page_slider])
                 page_slider.change(update_image, [selected_pdf, page_slider], image_display)
-                
-                # Update file upload handler
-                file_input.change(
-                    fn=app.upload_and_convert,
-                    inputs=[state, file_input, max_pages_input],
-                    outputs=[status, file_table]
-                ).then(
-                    fn=update_components,
-                    inputs=[status, file_table],
-                    outputs=[status, file_table]
-                )
-                
-                delete_btn.click(
-                    fn=delete_pdf,
-                    inputs=pdf_dropdown,
-                    outputs=[status, pdf_dropdown, file_table, image_display]
-                )
         
         with gr.Tab("Query"):
             with gr.Row():
@@ -322,8 +305,24 @@ def create_ui():
         file_input.change(
             fn=app.upload_and_convert,
             inputs=[state, file_input, max_pages_input],
-            outputs=[status, file_table]
+            outputs=[status]
+        ).then(
+            fn=update_components,
+            inputs=[status],
+            outputs=[status, file_table, pdf_dropdown]
         )
+        
+        delete_btn.click(
+            fn=delete_pdf,
+            inputs=pdf_dropdown,
+            outputs=[status, pdf_dropdown, file_table, image_display]
+        )
+
+        # file_input.change(
+        #     fn=app.upload_and_convert,
+        #     inputs=[state, file_input, max_pages_input],
+        #     outputs=[status, file_table]
+        # )
         
         search_btn.click(
             fn=app.search_documents,
