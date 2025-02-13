@@ -1,6 +1,8 @@
 import base64
 import glob
 import os
+import time
+import csv
 from constants import IMAGE_FOLDER
 
 def encode_image(image_path):
@@ -36,3 +38,30 @@ def update_image(selected_pdf, page_num):
     image_path = get_pdf_image(selected_pdf, page_num)
     print(f"image_path = {image_path}")
     return image_path
+
+def save_logs_to_csv(model_name, query, num_results, t, log_folder="logs"):
+    log_data = {
+        "LLM": model_name,
+        "query": query,
+        "num_results": num_results,
+        "elapsed": t.elapsed,
+    }
+    os.makedirs(log_folder, exist_ok=True)
+    log_file = os.path.join(log_folder, "llm_logs.csv")
+    file_exists = os.path.exists(log_file)
+
+    with open(log_file, mode="a", newline="") as csv_file:
+        writer = csv.DictWriter(csv_file, fieldnames=["LLM", "query", "num_results", "elapsed" ])
+        if not file_exists:
+            writer.writeheader()
+        writer.writerow(log_data)
+
+class Timer:
+    def __enter__(self):
+        self.start = time.perf_counter()
+        return self
+    
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.end = time.perf_counter()
+        self.elapsed = self.end - self.start
+        print(f"Elapsed time: {self.elapsed:.4f} seconds")

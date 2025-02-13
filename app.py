@@ -15,7 +15,7 @@ from middleware import Middleware
 from rag import Rag
 from pathlib import Path
 from pymilvus import connections, utility
-from utils import get_pdf_files, get_pdf_image, update_image, get_image_count
+from utils import get_pdf_files, get_pdf_image, update_image, get_image_count, Timer, save_logs_to_csv
 
 rag = Rag()
 
@@ -114,11 +114,6 @@ class PDFSearchApp:
     
     
     def search_documents(self, state, query, num_results=3):
-        print(f"Searching for query: {query}")
-        # id = generate_uuid(state)
-
-        print(f"===\nIndexed docs: {self.indexed_docs}\n===")
-        
         if not self.indexed_docs:
             print("Please index documents first")
             return "Please index documents first", "--"
@@ -149,7 +144,10 @@ class PDFSearchApp:
             except Exception as e:
                 return f"Error in for loop: {str(e)}"
 
-            rag_response = rag.get_answer_from_llama(query, img_paths, model, processor, num_results)
+            with Timer() as t:
+                rag_response = rag.get_answer_from_llama(query, img_paths, model, processor, num_results)
+            
+            save_logs_to_csv(model_id, query, num_results, t, log_folder="logs")
 
             gallery_data = [(img_paths[i], f"Document: {doc_ids[i]}, Page: {page_nums[i]}") for i in range(len(img_paths))]
             print(f"gallery data = {gallery_data}")
