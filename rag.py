@@ -67,7 +67,6 @@ class Rag:
             return None
 
     def get_answer_from_llama(self, query, imagePaths, model, processor, topk=1):
-        start_time = time.time()
         print(f"Querying llama for query={query}, topk={topk}, imagePaths={imagePaths}")
         
         try:    
@@ -131,12 +130,27 @@ class Rag:
             # Load images
             images = [Image.open(path) for path in imagePaths[:topk]]
             
-            # Qwen uses a different chat template format compared to Llama
-            prompt = f"These images are pages from a document. Based on these pages, please answer the following question: {query}"
+            messages = [
+                {
+                    "role": "system",
+                    "content": [
+                        {"type": "text", "text": JAILBREAK_MESSAGE_QWEN + TEST_MESSAGE}
+                    ]
+                },
+                {
+                    "role": "user",
+                    "content": [
+                        *[{"type": "image", "image": url} for url in imagePaths[:topk]],
+                        {"type": "text", "text": f"{query}"}
+                    ]
+                }
+            ]
+
+            input_text = processor.apply_chat_template(messages, add_generation_prompt=True)
             
             # Process inputs
             inputs = processor(
-                text=prompt,
+                text=input_text,
                 images=images,
                 return_tensors="pt",
                 padding=True,
@@ -148,19 +162,20 @@ class Rag:
             # Generate response
             output = model.generate(
                 **inputs,
-                max_new_tokens=512,
-                temperature=1.0,
+                max_new_tokens=1024,
+                temperature=1.2,
                 do_sample=True,
-                top_p=0.9,
-                repetition_penalty=1.1
+                # top_p=0.9,
+                repetition_penalty=1.0
             )
             
             # Decode the response
-            result = processor.decode(output[0], skip_special_tokens=True)
+            num_input_tokens = inputs["input_ids"].shape[1]
+            result = processor.decode(output[0][num_input_tokens:], skip_special_tokens=True)
             
             # Clean up the response by removing the input prompt
-            if result.startswith(prompt):
-                result = result[len(prompt):].strip()
+            if result.startswith(input_text):
+                result = result[len(input_text):].strip()
                 
             print(f"Generated response: {result}")
             return result
