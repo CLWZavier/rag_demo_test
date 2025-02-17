@@ -9,7 +9,8 @@ import pandas as pd
 from transformers import (
     MllamaForConditionalGeneration, 
     AutoProcessor,
-    BitsAndBytesConfig
+    BitsAndBytesConfig,
+    Qwen2VLForConditionalGeneration
 )
 from middleware import Middleware
 from rag import Rag
@@ -29,13 +30,24 @@ bnb_config = BitsAndBytesConfig(
     bnb_4bit_use_double_quant=True,
 )
 
-model_id = "meta-llama/Llama-3.2-11B-Vision-Instruct"
-model = MllamaForConditionalGeneration.from_pretrained(
+# model_id = "meta-llama/Llama-3.2-11B-Vision-Instruct"
+model_id = "Qwen/Qwen2-VL-7B-Instruct"
+# model = MllamaForConditionalGeneration.from_pretrained(
+#     model_id,
+#     torch_dtype=torch.bfloat16,
+#     quantization_config=bnb_config,
+#     device_map="auto",
+# )
+# processor = AutoProcessor.from_pretrained(model_id)
+
+model = Qwen2VLForConditionalGeneration.from_pretrained(
     model_id,
     torch_dtype=torch.bfloat16,
     quantization_config=bnb_config,
+    attn_implementation="flash_attention_2",
     device_map="auto",
 )
+
 processor = AutoProcessor.from_pretrained(model_id)
 
 print(f"model memory = {model.get_memory_footprint()}")
@@ -116,10 +128,10 @@ class PDFSearchApp:
     def search_documents(self, state, query, num_results=3):
         if not self.indexed_docs:
             print("Please index documents first")
-            return "Please index documents first", "--"
+            return None, "Please index documents first"
         if not query:
             print("Please enter a search query")
-            return "Please enter a search query", "--"
+            return None, "Please enter a search query"
             
         try:
             img_paths = []
@@ -134,28 +146,52 @@ class PDFSearchApp:
 
                     print(f"Retrieved page number: {page_num}")
 
+                    # Construct the full path to the image
                     img_path = f"{doc_id}/page_{page_num}.png"
                     img_path = os.path.join(*img_path.split("/"))
+                    
+                    # Verify the image exists
+                    if not os.path.exists(img_path):
+                        print(f"Warning: Image not found at {img_path}")
+                        continue
 
                     print(f"Retrieved image path: {img_path}")
                     img_paths.append(img_path)
                     doc_ids.append(doc_id)
                     page_nums.append(page_num)
+
+                if not img_paths:
+                    return None, "No matching images found"
+
+                with Timer() as t:
+                    rag_response = Rag.get_answer_from_qwen(query, img_paths, self.model, self.processor, num_results)
+                
+                print("Logging data...")
+                save_logs_to_csv(model_id, query, num_results, t, log_folder="logs")
+
+                # Format gallery data as list of (image_path, caption) tuples
+                gallery_data = []
+                for i in range(len(img_paths)):
+                    try:
+                        # Read the image to verify it's valid
+                        caption = f"Document: {os.path.basename(doc_ids[i])}, Page: {page_nums[i]}"
+                        gallery_data.append((img_paths[i], caption))
+                    except Exception as e:
+                        print(f"Error processing image {img_paths[i]}: {str(e)}")
+                        continue
+
+                if not gallery_data:
+                    return None, "No valid images found"
+
+                return gallery_data, rag_response
+
             except Exception as e:
-                return f"Error in for loop: {str(e)}"
-
-            with Timer() as t:
-                rag_response = rag.get_answer_from_llama(query, img_paths, model, processor, num_results)
-            
-            save_logs_to_csv(model_id, query, num_results, t, log_folder="logs")
-
-            gallery_data = [(img_paths[i], f"Document: {doc_ids[i]}, Page: {page_nums[i]}") for i in range(len(img_paths))]
-            print(f"gallery data = {gallery_data}")
-            return gallery_data, rag_response
-
-            
+                print(f"Error in processing results: {str(e)}")
+                return None, f"Error processing results: {str(e)}"
+                
         except Exception as e:
-            return f"Error during search: {str(e)}", "--"
+            print(f"Error during search: {str(e)}")
+            return None, f"Error during search: {str(e)}"
     
 def delete_pdf(selected_pdf):
     """Deletes a PDF file from local storage and Milvus."""

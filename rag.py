@@ -7,7 +7,9 @@ import time
 from PIL import Image
 from typing import List
 from utils import encode_image
-from chat_templates import STRICT_MESSAGE, CREATIVE_MESSAGE, TEST_MESSAGE, JAILBREAK_MESSAGE
+from chat_templates import STRICT_MESSAGE, CREATIVE_MESSAGE, TEST_MESSAGE, JAILBREAK_MESSAGE_LLAMA, JAILBREAK_MESSAGE_QWEN
+from transformers import Qwen2VLForConditionalGeneration, AutoTokenizer, AutoProcessor
+from qwen_vl_utils import process_vision_info
 
 class Rag:
 
@@ -75,7 +77,7 @@ class Rag:
                 {
                     "role": "system",
                     "content": [
-                        {"type": "text", "text": JAILBREAK_MESSAGE + TEST_MESSAGE}
+                        {"type": "text", "text": JAILBREAK_MESSAGE_LLAMA + TEST_MESSAGE}
                     ]
                 },
                 {
@@ -101,11 +103,6 @@ class Rag:
      
             num_input_tokens = inputs["input_ids"].shape[1]
             result = processor.decode(output[0][num_input_tokens:], skip_special_tokens=True)
-            print(f"\noutput = {output}\n")
-            # print(f"\nnum_input_tokens = {num_input_tokens}\n")
-            # print(f"\ncleaned_output = {cleaned_output}\n")
-
-            print(f"Generated output in {(time.time() - start_time)}s")
             print(result)
 
             return result
@@ -113,6 +110,64 @@ class Rag:
         except Exception as e:
             print(f"An error occurred while querying llama: {e}")
             return None
+        
+    def get_answer_from_qwen(query, imagePaths, model, processor, topk=1):
+        """
+        Generate response using Qwen2-VL model for multimodal queries
+        
+        Args:
+            query (str): User query text
+            imagePaths (list): List of paths to images
+            model: Loaded Qwen2VL model instance
+            processor: Qwen2VL processor instance
+            topk (int): Number of top images to process
+        
+        Returns:
+            str: Generated response text
+        """
+        print(f"Querying Qwen for query={query}, topk={topk}, imagePaths={imagePaths}")
+        
+        try:
+            # Load images
+            images = [Image.open(path) for path in imagePaths[:topk]]
+            
+            # Qwen uses a different chat template format compared to Llama
+            prompt = f"These images are pages from a document. Based on these pages, please answer the following question: {query}"
+            
+            # Process inputs
+            inputs = processor(
+                text=prompt,
+                images=images,
+                return_tensors="pt",
+                padding=True,
+                truncation=True
+            ).to(model.device)
+            
+            print("Generating output...")
+            
+            # Generate response
+            output = model.generate(
+                **inputs,
+                max_new_tokens=512,
+                temperature=1.0,
+                do_sample=True,
+                top_p=0.9,
+                repetition_penalty=1.1
+            )
+            
+            # Decode the response
+            result = processor.decode(output[0], skip_special_tokens=True)
+            
+            # Clean up the response by removing the input prompt
+            if result.startswith(prompt):
+                result = result[len(prompt):].strip()
+                
+            print(f"Generated response: {result}")
+            return result
+            
+        except Exception as e:
+            print(f"An error occurred while querying Qwen: {e}")
+            return f"Error generating response: {str(e)}"
 
     # def __get_openai_api_payload(self, query:str, imagesPaths:List[str]):
     #     image_payload = []
