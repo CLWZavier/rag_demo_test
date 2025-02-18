@@ -296,6 +296,7 @@ def create_ui():
                         scale=7
                     )
                     select_model_btn = gr.Button("Use model", scale=1)
+                    output_msg = gr.Textbox(label="Status", interactive=False)
 
         # Tab for ingesting documents
         with gr.Tab("Upload PDF"):
@@ -370,7 +371,7 @@ def create_ui():
                     # Load new model
                     new_models = load_model(model_id)
                     current_model_id.value = model_id
-                    return new_models
+                    return new_models, "Model loaded" + model_id
 
                 file_table.select(on_select, None, [image_display, selected_pdf, page_slider])
                 page_slider.change(update_image, [selected_pdf, page_slider], image_display)
@@ -396,7 +397,7 @@ def create_ui():
         select_model_btn.click(
             fn=update_model,
             inputs=[model_dropdown, model_processor],
-            outputs=[model_processor]
+            outputs=[model_processor, output_msg]
         )
 
         # Event handlers - Tab for ingesting documents
