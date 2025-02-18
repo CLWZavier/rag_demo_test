@@ -66,9 +66,7 @@ class Rag:
             print(f"An error occurred while querying OpenAI: {e}")
             return None
 
-    def get_answer_from_llama(self, query, imagePaths, model, processor, topk=1):
-        print(f"Querying llama for query={query}, topk={topk}, imagePaths={imagePaths}")
-        
+    def get_answer_from_llama(query, imagePaths, model, processor, topk=1):        
         try:    
             images = [Image.open(path) for path in imagePaths[:topk]]
 
@@ -124,7 +122,7 @@ class Rag:
         Returns:
             str: Generated response text
         """
-        print(f"Querying Qwen for query={query}, topk={topk}, imagePaths={imagePaths}")
+        print(f"Querying Qwen for query={query}, topk={topk}")
         
         try:
             # Load images

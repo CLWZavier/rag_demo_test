@@ -56,6 +56,11 @@ def save_logs_to_csv(model_name, query, num_results, t, log_folder="logs"):
             writer.writeheader()
         writer.writerow(log_data)
 
+def get_pdf_file_name(file_path):
+    # Extract the file name from the file path
+    file_name = os.path.basename(file_path)
+    return file_name
+
 class Timer:
     def __enter__(self):
         self.start = time.perf_counter()

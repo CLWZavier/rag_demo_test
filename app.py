@@ -1,10 +1,9 @@
 import gradio as gr
-import tempfile
 import os
-import fitz  # PyMuPDF
 import uuid
 import torch
 import pandas as pd
+import gc
 
 from transformers import (
     MllamaForConditionalGeneration, 
@@ -16,7 +15,15 @@ from middleware import Middleware
 from rag import Rag
 from pathlib import Path
 from pymilvus import connections, utility
-from utils import get_pdf_files, get_pdf_image, update_image, get_image_count, Timer, save_logs_to_csv
+from utils import (
+    get_pdf_files, 
+    get_pdf_image, 
+    update_image, 
+    get_image_count, 
+    Timer, 
+    save_logs_to_csv, 
+    get_pdf_file_name
+    )
 
 rag = Rag()
 
@@ -30,8 +37,10 @@ bnb_config = BitsAndBytesConfig(
     bnb_4bit_use_double_quant=True,
 )
 
+global_model_id = None
+
 # model_id = "meta-llama/Llama-3.2-11B-Vision-Instruct"
-model_id = "Qwen/Qwen2-VL-7B-Instruct"
+# model_id = "Qwen/Qwen2-VL-7B-Instruct"
 # model = MllamaForConditionalGeneration.from_pretrained(
 #     model_id,
 #     torch_dtype=torch.bfloat16,
@@ -40,58 +49,35 @@ model_id = "Qwen/Qwen2-VL-7B-Instruct"
 # )
 # processor = AutoProcessor.from_pretrained(model_id)
 
-model = Qwen2VLForConditionalGeneration.from_pretrained(
-    model_id,
-    torch_dtype=torch.bfloat16,
-    quantization_config=bnb_config,
-    attn_implementation="flash_attention_2",
-    device_map="auto",
-)
+# model = Qwen2VLForConditionalGeneration.from_pretrained(
+#     model_id,
+#     torch_dtype=torch.bfloat16,
+#     quantization_config=bnb_config,
+#     attn_implementation="flash_attention_2",
+#     device_map="auto",
+# )
 
-processor = AutoProcessor.from_pretrained(model_id)
+# processor = AutoProcessor.from_pretrained(model_id)
 
-print(f"model memory = {model.get_memory_footprint()}")
+# print(f"model memory = {model.get_memory_footprint()}")
 
 middleware = Middleware()
 
-def generate_uuid(state):
-    # Check if UUID already exists in session state
+## For reference
+# def generate_uuid(state):
+#     # Check if UUID already exists in session state
     
-    if state["user_uuid"] is None:
-        # Generate a new UUID if not already set
-        state["user_uuid"] = str(uuid.uuid4())
+#     if state["user_uuid"] is None:
+#         # Generate a new UUID if not already set
+#         state["user_uuid"] = str(uuid.uuid4())
 
-    return state["user_uuid"]
-
-def get_pdf_file_name(file_path):
-    # Extract the file name from the file path
-    file_name = os.path.basename(file_path)
-    return file_name
-
-def get_id_from_folder(base_folder: str) -> list[str]:
-    """
-    Retrieves the list of IDs (folder names) in the base folder.
-
-    :param base_folder: The root folder containing ID-based subfolders.
-    :return: A list of IDs corresponding to existing subfolders.
-    """
-    base_path = Path(base_folder)
-    
-    if not base_path.exists():
-        print(f"Base folder '{base_folder}' does not exist.")
-        return []
-
-    # List all subfolders and extract their names
-    ids = [folder.name for folder in base_path.iterdir() if folder.is_dir()]
-    if ids:
-        return ids
-    return None
+#     return state["user_uuid"]
 
 class PDFSearchApp:
     def __init__(self, index_list):
         self.indexed_docs = {}
-        self.model = model
-        self.processor = processor
+        # self.model = model
+        # self.processor = processor
 
         if index_list:
             for i in index_list:
@@ -125,19 +111,21 @@ class PDFSearchApp:
             return f"Error processing PDF: {str(e)}"
     
     
-    def search_documents(self, state, query, num_results=3):
+    def search_documents(self, model_processor, query, num_results=3):
         if not self.indexed_docs:
-            print("Please index documents first")
             return None, "Please index documents first"
         if not query:
-            print("Please enter a search query")
             return None, "Please enter a search query"
+        if not model_processor or not model_processor.get("model"):
+            return None, "No model loaded - select a model first"
             
         try:
             img_paths = []
             doc_ids = []
             page_nums = []
             search_results = middleware.search([query], num_results)[0]
+            model = model_processor["model"]
+            processor = model_processor["processor"]
 
             try:
                 for i in range(len(search_results)):
@@ -163,11 +151,16 @@ class PDFSearchApp:
                 if not img_paths:
                     return None, "No matching images found"
 
+                print(f"model.config.model_type = {model.config.model_type}")
+
                 with Timer() as t:
-                    rag_response = Rag.get_answer_from_qwen(query, img_paths, self.model, self.processor, num_results)
+                    if "mllama" in model.config.model_type:
+                        rag_response = Rag.get_answer_from_llama(query, img_paths, model, processor, num_results)
+                    elif "qwen2_vl" in model.config.model_type:
+                        rag_response = Rag.get_answer_from_qwen(query, img_paths, model, processor, num_results)
                 
                 print("Logging data...")
-                save_logs_to_csv(model_id, query, num_results, t, log_folder="logs")
+                save_logs_to_csv(global_model_id, query, num_results, t, log_folder="logs")
 
                 # Format gallery data as list of (image_path, caption) tuples
                 gallery_data = []
@@ -192,7 +185,38 @@ class PDFSearchApp:
         except Exception as e:
             print(f"Error during search: {str(e)}")
             return None, f"Error during search: {str(e)}"
+
+def load_model(model_id):
+    """Loads model and processor with memory cleanup"""
+    print(f"Loading {model_id}...")
+    torch.cuda.empty_cache()
     
+    if "Qwen" in model_id:
+        model_cls = Qwen2VLForConditionalGeneration
+        kwargs = {"attn_implementation": "flash_attention_2"}
+    else:
+        model_cls = MllamaForConditionalGeneration
+        kwargs = {}
+    
+    model = model_cls.from_pretrained(
+        model_id,
+        torch_dtype=torch.bfloat16,
+        quantization_config=bnb_config,
+        device_map="auto",
+        **kwargs
+    )
+    processor = AutoProcessor.from_pretrained(model_id)
+    return {"model": model, "processor": processor}
+
+def unload_model(current_models):
+    """Clears model from memory"""
+    if current_models and current_models["model"]:
+        del current_models["model"]
+        del current_models["processor"]
+        torch.cuda.empty_cache()
+        gc.collect()
+    return {"model": None, "processor": None}
+
 def delete_pdf(selected_pdf):
     """Deletes a PDF file from local storage and Milvus."""
     if not selected_pdf:
@@ -254,8 +278,26 @@ def create_ui():
     with gr.Blocks(theme='allenai/gradio-theme', css=css) as demo:
         state = gr.State(value={"user_uuid": None})
 
+        model_processor = gr.State({"model": None, "processor": None})
+        current_model_id = gr.State(None)
+
         gr.Markdown("# Colpali Milvus Multimodal RAG Demo")
         
+        # Tab for choosing LLM and settings its hyperparamters
+        with gr.Tab("LLM Settings"):
+            with gr.Row():
+                with gr.Column():
+                    model_dropdown = gr.Dropdown(
+                        choices=["Qwen/Qwen2-VL-7B-Instruct", "meta-llama/Llama-3.2-11B-Vision-Instruct"],
+                        value=current_model_id,
+                        label="Select LLM model to use:",
+                        filterable=True,
+                        container=True,
+                        scale=7
+                    )
+                    select_model_btn = gr.Button("Use model", scale=1)
+
+        # Tab for ingesting documents
         with gr.Tab("Upload PDF"):
             with gr.Row():
                 with gr.Column():
@@ -301,7 +343,7 @@ def create_ui():
                     return image_path, pdf_name, gr.Slider(1, max_pages, value=1, step=1, label="Page")
 
                 # Update both dropdown and file table when a file is uploaded
-                def update_components(status_msg):
+                def update_ingestion_components(status_msg):
                     current_files = [pdf for sublist in get_pdf_files() for pdf in sublist]
                     return (
                         status_msg,
@@ -315,10 +357,25 @@ def create_ui():
                             scale=6,
                         )
                     )
+                
+                def update_model(model_id, current_models):
+                    global global_model_id
+                    global_model_id = model_id
+                    if model_id == current_model_id.value:
+                        return current_models
+                    
+                    # Unload existing model
+                    unload_model(current_models)
+                    
+                    # Load new model
+                    new_models = load_model(model_id)
+                    current_model_id.value = model_id
+                    return new_models
 
                 file_table.select(on_select, None, [image_display, selected_pdf, page_slider])
                 page_slider.change(update_image, [selected_pdf, page_slider], image_display)
         
+        # Tab for search
         with gr.Tab("Query"):
             with gr.Row():
                 with gr.Column():
@@ -335,13 +392,20 @@ def create_ui():
                 with gr.Column():
                     images = gr.Gallery(label="Top pages matching query", object_fit="contain")
         
-        # Event handlers
+        # Event handlers - Tab for choosing LLM and settings its hyperparamters
+        select_model_btn.click(
+            fn=update_model,
+            inputs=[model_dropdown, model_processor],
+            outputs=[model_processor]
+        )
+
+        # Event handlers - Tab for ingesting documents
         file_input.change(
             fn=app.upload_and_convert,
             inputs=[state, file_input, max_pages_input],
             outputs=[status]
         ).then(
-            fn=update_components,
+            fn=update_ingestion_components,
             inputs=[status],
             outputs=[status, file_table, pdf_dropdown]
         )
@@ -358,15 +422,16 @@ def create_ui():
         #     outputs=[status, file_table]
         # )
         
+        # Event handlers - Tab for search
         search_btn.click(
             fn=app.search_documents,
-            inputs=[state, query_input, num_results_slider],
+            inputs=[model_processor, query_input, num_results_slider],
             outputs=[images, llm_answer]
         )
 
         query_input.submit(
             fn=app.search_documents,
-            inputs=[state, query_input, num_results_slider],
+            inputs=[model_processor, query_input, num_results_slider],
             outputs=[images, llm_answer]
         )
     
