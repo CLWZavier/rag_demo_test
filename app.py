@@ -11,7 +11,6 @@ from transformers import (
     BitsAndBytesConfig,
     Qwen2VLForConditionalGeneration
 )
-from huggingface_hub import ModelCard
 from middleware import Middleware
 from rag import Rag
 from pathlib import Path
@@ -189,6 +188,9 @@ class PDFSearchApp:
 
 def load_model(model_id):
     """Loads model and processor with memory cleanup"""
+    print(f"Loading {model_id}...")
+    torch.cuda.empty_cache()
+    
     if "Qwen" in model_id:
         model_cls = Qwen2VLForConditionalGeneration
         kwargs = {"attn_implementation": "flash_attention_2"}
@@ -204,13 +206,10 @@ def load_model(model_id):
         **kwargs
     )
     processor = AutoProcessor.from_pretrained(model_id)
-    return {"model": model, "processor": processor} 
+    return {"model": model, "processor": processor}
 
 def unload_model(current_models):
     """Clears model from memory"""
-
-    model = current_models["model"]
-
     if current_models and current_models["model"]:
         del current_models["model"]
         del current_models["processor"]
@@ -287,9 +286,7 @@ def create_ui():
         # Tab for choosing LLM and settings its hyperparamters
         with gr.Tab("LLM Settings"):
             with gr.Row():
-                with gr.Column(scale=4):
-                    output_msg = gr.Markdown(label="Model card:", container=True, height=750)
-                with gr.Column(scale=1):
+                with gr.Column():
                     model_dropdown = gr.Dropdown(
                         choices=["Qwen/Qwen2-VL-7B-Instruct", "meta-llama/Llama-3.2-11B-Vision-Instruct"],
                         value=current_model_id,
@@ -373,11 +370,7 @@ def create_ui():
                     # Load new model
                     new_models = load_model(model_id)
                     current_model_id.value = model_id
-
-                    # Get model info from huggingface
-                    model_card = (ModelCard.load(model_id)).text
-
-                    return new_models, model_card
+                    return new_models
 
                 file_table.select(on_select, None, [image_display, selected_pdf, page_slider])
                 page_slider.change(update_image, [selected_pdf, page_slider], image_display)
@@ -403,7 +396,7 @@ def create_ui():
         select_model_btn.click(
             fn=update_model,
             inputs=[model_dropdown, model_processor],
-            outputs=[model_processor, output_msg]
+            outputs=[model_processor]
         )
 
         # Event handlers - Tab for ingesting documents
@@ -446,4 +439,4 @@ def create_ui():
 
 if __name__ == "__main__":
     demo = create_ui()
-    demo.launch(strict_cors=False, share=False)
+    demo.launch(strict_cors=False, share=True)
