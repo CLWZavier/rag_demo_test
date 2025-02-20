@@ -7,7 +7,7 @@ import time
 from PIL import Image
 from typing import List
 from utils import encode_image
-from chat_templates import STRICT_MESSAGE, CREATIVE_MESSAGE, TEST_MESSAGE, JAILBREAK_MESSAGE_LLAMA, JAILBREAK_MESSAGE_QWEN
+from constants.chat_templates import STRICT_MESSAGE, CREATIVE_MESSAGE, TEST_MESSAGE, JAILBREAK_MESSAGE_LLAMA, JAILBREAK_MESSAGE_QWEN
 from transformers import Qwen2VLForConditionalGeneration, AutoTokenizer, AutoProcessor
 from qwen_vl_utils import process_vision_info
 

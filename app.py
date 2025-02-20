@@ -4,6 +4,7 @@ import uuid
 import torch
 import pandas as pd
 import gc
+from constants.llm_details import MODELS
 
 from transformers import (
     MllamaForConditionalGeneration, 
@@ -38,26 +39,6 @@ bnb_config = BitsAndBytesConfig(
 )
 
 global_model_id = None
-
-# model_id = "meta-llama/Llama-3.2-11B-Vision-Instruct"
-# model_id = "Qwen/Qwen2-VL-7B-Instruct"
-# model = MllamaForConditionalGeneration.from_pretrained(
-#     model_id,
-#     torch_dtype=torch.bfloat16,
-#     quantization_config=bnb_config,
-#     device_map="auto",
-# )
-# processor = AutoProcessor.from_pretrained(model_id)
-
-# model = Qwen2VLForConditionalGeneration.from_pretrained(
-#     model_id,
-#     torch_dtype=torch.bfloat16,
-#     quantization_config=bnb_config,
-#     attn_implementation="flash_attention_2",
-#     device_map="auto",
-# )
-
-# processor = AutoProcessor.from_pretrained(model_id)
 
 # print(f"model memory = {model.get_memory_footprint()}")
 
@@ -288,7 +269,7 @@ def create_ui():
             with gr.Row():
                 with gr.Column():
                     model_dropdown = gr.Dropdown(
-                        choices=["Qwen/Qwen2-VL-7B-Instruct", "meta-llama/Llama-3.2-11B-Vision-Instruct"],
+                        choices=MODELS.keys(),
                         value=current_model_id,
                         label="Select LLM model to use:",
                         filterable=True,
@@ -296,6 +277,8 @@ def create_ui():
                         scale=7
                     )
                     select_model_btn = gr.Button("Use model", scale=1)
+                with gr.Column():
+                    model_info = gr.Textbox(label="Model info", interactive=False)
 
         # Tab for ingesting documents
         with gr.Tab("Upload PDF"):
@@ -370,7 +353,7 @@ def create_ui():
                     # Load new model
                     new_models = load_model(model_id)
                     current_model_id.value = model_id
-                    return new_models
+                    return new_models, MODELS[model_id]
 
                 file_table.select(on_select, None, [image_display, selected_pdf, page_slider])
                 page_slider.change(update_image, [selected_pdf, page_slider], image_display)
@@ -396,7 +379,7 @@ def create_ui():
         select_model_btn.click(
             fn=update_model,
             inputs=[model_dropdown, model_processor],
-            outputs=[model_processor]
+            outputs=[model_processor, model_info]
         )
 
         # Event handlers - Tab for ingesting documents

@@ -3,7 +3,7 @@ import glob
 import os
 import time
 import csv
-from constants import IMAGE_FOLDER
+from constants.urls import IMAGE_FOLDER
 
 def encode_image(image_path):
     with open(image_path, "rb") as image_file:
