@@ -14,8 +14,6 @@ from transformers import (
 )
 from middleware import Middleware
 from rag import Rag
-from pathlib import Path
-from pymilvus import connections, utility
 from utils import (
     get_pdf_files, 
     get_pdf_image, 
@@ -56,9 +54,16 @@ middleware = Middleware()
 
 class PDFSearchApp:
     def __init__(self, index_list):
+        """
+        Initializes the PDFSearchApp with an optional list of indexed documents.
+
+        Args:
+            index_list (list): A list of document identifiers that are already indexed. 
+                            If provided, these documents will be marked as indexed 
+                            in the app's state.
+        """
+
         self.indexed_docs = {}
-        # self.model = model
-        # self.processor = processor
 
         if index_list:
             for i in index_list:
@@ -69,6 +74,21 @@ class PDFSearchApp:
     def upload_and_convert(self, state, file, max_pages):
         # id = generate_uuid(state)
 
+        """
+        Uploads a PDF file, extracts its pages as images, and indexes the
+        images to Milvus. If the document is already indexed, it returns a
+        message indicating that the document is already indexed.
+
+        Args:
+            state (gr.State): The current state of the Gradio app.
+            file (UploadButton): The uploaded PDF file.
+            max_pages (int): The maximum number of pages to extract from the PDF.
+
+        Returns:
+            str: A message indicating the result of the upload and indexing operation.
+            list: A list of document identifiers that are already indexed.
+        """
+        
         if file is None:
             return "No file uploaded", get_pdf_files()
 
@@ -93,6 +113,21 @@ class PDFSearchApp:
     
     
     def search_documents(self, model_processor, query, num_results=3):
+        """
+        Searches for n (num results) most similar images to a query in all indexed documents, generates a response based on the n images and returns the results.
+
+        Args:
+            model_processor (dict): The gradio state of the model and processor
+                for the current model.
+            query (str): The search query.
+            num_results (int, optional): The number of images retrieved from milvus. Defaults to 3.
+
+        Returns:
+            tuple: A tuple containing the gallery data and the RAG response.
+            The gallery data is a list of tuples, where each tuple contains the
+            image path and a caption for the image. The RAG response is a string
+            containing the answer to the query.
+        """
         if not self.indexed_docs:
             return None, "Please index documents first"
         if not query:
@@ -143,11 +178,10 @@ class PDFSearchApp:
                 print("Logging data...")
                 save_logs_to_csv(global_model_id, query, num_results, t, log_folder="logs")
 
-                # Format gallery data as list of (image_path, caption) tuples
+                # Display images retrieved in a gradio gallery
                 gallery_data = []
                 for i in range(len(img_paths)):
                     try:
-                        # Read the image to verify it's valid
                         caption = f"Document: {os.path.basename(doc_ids[i])}, Page: {page_nums[i]}"
                         gallery_data.append((img_paths[i], caption))
                     except Exception as e:
@@ -183,7 +217,7 @@ def load_model(model_id):
         model_id,
         torch_dtype=torch.bfloat16,
         quantization_config=bnb_config,
-        device_map="auto",
+        # device_map="auto",
         **kwargs
     )
     processor = AutoProcessor.from_pretrained(model_id)
@@ -197,46 +231,6 @@ def unload_model(current_models):
         torch.cuda.empty_cache()
         gc.collect()
     return {"model": None, "processor": None}
-
-def delete_pdf(selected_pdf):
-    """Deletes a PDF file from local storage and Milvus."""
-    if not selected_pdf:
-        return "No PDF selected.", None, None, None
-    
-    pdf_path = os.path.join("pages", selected_pdf)
-
-    try:
-        # Delete from Milvus
-        middleware.milvus_manager.delete_doc("pages/" + selected_pdf)
-
-        # Only do this once deleted from milvus
-        if os.path.exists(pdf_path):
-            import shutil
-            shutil.rmtree(pdf_path)
-
-        # Get updated list of PDFs
-        updated_files = get_pdf_files()
-        
-        # Create updated choices for dropdown
-        updated_choices = [pdf for sublist in updated_files for pdf in sublist]
-        
-        # Create updated DataFrame
-        updated_df = gr.DataFrame(value=updated_files, headers=["PDF Files"])
-        
-        # Create a new dropdown component with updated choices
-        updated_dropdown = gr.Dropdown(
-            choices=updated_choices,
-            label="Select PDF to Delete",
-            filterable=True,
-            container=True,
-            scale=6,
-            value=None  # Reset the selected value
-        )
-
-        return f"Deleted {selected_pdf} successfully.", updated_dropdown, updated_df, None
-
-    except Exception as e:
-        return f"Error deleting {selected_pdf}: {str(e)}", None, None, None
 
 def create_ui():
     index_list = middleware.list_index()
@@ -278,7 +272,7 @@ def create_ui():
                     )
                     select_model_btn = gr.Button("Use model", scale=1)
                 with gr.Column():
-                    model_info = gr.Textbox(label="Model info", interactive=False)
+                    model_info = gr.Textbox(label="Model info")
 
         # Tab for ingesting documents
         with gr.Tab("Upload PDF"):
@@ -394,7 +388,7 @@ def create_ui():
         )
         
         delete_btn.click(
-            fn=delete_pdf,
+            fn=middleware.delete_pdf,
             inputs=pdf_dropdown,
             outputs=[status, pdf_dropdown, file_table, image_display]
         )

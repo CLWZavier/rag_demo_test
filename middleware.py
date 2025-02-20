@@ -1,13 +1,13 @@
-from colpali_manager import ColpaliManager
-from milvus_manager import MilvusManager
-from pdf_manager import PdfManager
-import hashlib
+from managers.colpali_manager import ColpaliManager
+from managers.milvus_manager import MilvusManager
+from managers.pdf_manager import PdfManager
+from constants import urls
+from utils import get_pdf_files
+import gradio as gr
 import os
 
 pdf_manager = PdfManager()
 colpali_manager = ColpaliManager()
-
-
 
 class Middleware:
     def __init__(self, id:str = None, create_collection=True):
@@ -64,3 +64,43 @@ class Middleware:
 
     def list_index(self):
         return self.milvus_manager.get_indexed_file_names()
+    
+    def delete_pdf(self, selected_pdf):
+        """Deletes a PDF file from local storage and Milvus."""
+        if not selected_pdf:
+            return "No PDF selected.", None, None, None
+        
+        pdf_path = os.path.join("pages", selected_pdf)
+
+        try:
+            # Delete from Milvus
+            self.milvus_manager.delete_doc(urls.IMAGE_FOLDER + selected_pdf)
+
+            # Only do this once deleted from milvus
+            if os.path.exists(pdf_path):
+                import shutil
+                shutil.rmtree(pdf_path)
+
+            # Get updated list of PDFs
+            updated_files = get_pdf_files()
+            
+            # Create updated choices for dropdown
+            updated_choices = [pdf for sublist in updated_files for pdf in sublist]
+            
+            # Create updated DataFrame
+            updated_df = gr.DataFrame(value=updated_files, headers=["PDF Files"])
+            
+            # Create a new dropdown component with updated choices
+            updated_dropdown = gr.Dropdown(
+                choices=updated_choices,
+                label="Select PDF to Delete",
+                filterable=True,
+                container=True,
+                scale=6,
+                value=None  # Reset the selected value
+            )
+
+            return f"Deleted {selected_pdf} successfully.", updated_dropdown, updated_df, None
+
+        except Exception as e:
+            return f"Error deleting {selected_pdf}: {str(e)}", None, None, None

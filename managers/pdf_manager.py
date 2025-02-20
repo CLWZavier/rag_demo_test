@@ -1,5 +1,6 @@
 from pathlib import Path
 from pdf2image import convert_from_path
+from constants import urls
 import os
 import shutil
 
@@ -16,7 +17,7 @@ class PdfManager:
         os.makedirs(output_folder)
 
     def save_images(self, id, pdf_path, max_pages, pages: list[int] = None) -> list[str]:
-        output_folder = f"pages/{id}/"
+        output_folder = f"{urls.IMAGE_FOLDER}{id}/"
         output_folder_path = Path(output_folder)
         images = convert_from_path(pdf_path)
 

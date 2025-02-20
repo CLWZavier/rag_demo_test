@@ -30,16 +30,6 @@ class ColpaliManager:
 
         print(f"Initializing ColpaliManager with device {device} and model {model_name}")
 
-        # self.device = get_torch_device(device)
-
-        # self.model = ColPali.from_pretrained(
-        #     model_name,
-        #     torch_dtype=torch.bfloat16,
-        #     device_map=self.device,
-        # ).eval()
-
-        # self.processor = cast(ColPaliProcessor, ColPaliProcessor.from_pretrained(model_name))
-
     @spaces.GPU
     def get_images(self, paths: list[str]) -> List[Image.Image]:
         return [Image.open(path) for path in paths]

@@ -101,7 +101,7 @@ class MilvusManager:
                 collection_name=collection_name,
                 filter=filter_str,
                 output_fields=["seq_id", "vector", "doc"],
-                limit=1000,
+                limit=16384,
             )
             # Stack all the vectors belonging to this document.
             doc_vecs = np.vstack(
@@ -181,7 +181,7 @@ class MilvusManager:
             collection_name=self.collection_name,
             filter="seq_id == 0 AND doc_id == 0 AND doc != ''",
             output_fields=["doc"],
-            limit=10000  # Adjust limit as needed
+            limit=16384  # Adjust limit as needed
         )
         file_names = set(item["doc"].split('//')[0] for item in results if "doc" in item)
         return list(file_names)
