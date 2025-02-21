@@ -112,7 +112,7 @@ class PDFSearchApp:
             return f"Error processing PDF: {str(e)}"
     
     
-    def search_documents(self, model_processor, query, num_results=3):
+    def search_documents(self, query, history, model_processor, num_results=3):
         """
         Searches for n (num results) most similar images to a query in all indexed documents, generates a response based on the n images and returns the results.
 
@@ -178,6 +178,24 @@ class PDFSearchApp:
                 print("Logging data...")
                 save_logs_to_csv(global_model_id, query, num_results, t, log_folder="logs")
 
+                # formatted_query = {"role": "user", "content": query}
+                # formatted_response = {"role": "assistant", "content": rag_response}
+                # formatted_metadata = {"title": "Generated using " + model}
+
+                history.append(
+                    gr.ChatMessage(role="user", content=query)
+                )
+
+                history.append(
+                    gr.ChatMessage(role="assistant",
+                                content=rag_response,
+                                metadata={"title": "Generated using " + global_model_id})
+                )
+
+                # history.append(formatted_query)
+                # history.append(formatted_response)
+                # history.append(formatted_metadata)
+
                 # Display images retrieved in a gradio gallery
                 gallery_data = []
                 for i in range(len(img_paths)):
@@ -191,7 +209,7 @@ class PDFSearchApp:
                 if not gallery_data:
                     return None, "No valid images found"
 
-                return gallery_data, rag_response
+                return gallery_data, history
 
             except Exception as e:
                 print(f"Error in processing results: {str(e)}")
@@ -356,6 +374,7 @@ def create_ui():
         with gr.Tab("Query"):
             with gr.Row():
                 with gr.Column():
+                    chatbot = gr.Chatbot(type="messages", height=600)
                     query_input = gr.Textbox(label="Enter query")
                     num_results_slider = gr.Slider(
                         minimum=1,
@@ -365,7 +384,6 @@ def create_ui():
                         label="Number of results"
                     )
                     search_btn = gr.Button("Query")
-                    llm_answer = gr.Markdown(label="RAG_Response", show_copy_button=True, container=True)
                 with gr.Column():
                     images = gr.Gallery(label="Top pages matching query", object_fit="contain")
         
@@ -402,14 +420,14 @@ def create_ui():
         # Event handlers - Tab for search
         search_btn.click(
             fn=app.search_documents,
-            inputs=[model_processor, query_input, num_results_slider],
-            outputs=[images, llm_answer]
+            inputs=[query_input, chatbot, model_processor, num_results_slider],
+            outputs=[images, chatbot]
         )
 
         query_input.submit(
             fn=app.search_documents,
-            inputs=[model_processor, query_input, num_results_slider],
-            outputs=[images, llm_answer]
+            inputs=[query_input, chatbot, model_processor, num_results_slider],
+            outputs=[images, chatbot]
         )
     
     return demo
