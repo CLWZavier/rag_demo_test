@@ -39,23 +39,6 @@ def update_image(selected_pdf, page_num):
     print(f"image_path = {image_path}")
     return image_path
 
-def save_logs_to_csv(model_name, query, num_results, t, log_folder="logs"):
-    log_data = {
-        "LLM": model_name,
-        "query": query,
-        "num_results": num_results,
-        "elapsed": t.elapsed,
-    }
-    os.makedirs(log_folder, exist_ok=True)
-    log_file = os.path.join(log_folder, "llm_logs.csv")
-    file_exists = os.path.exists(log_file)
-
-    with open(log_file, mode="a", newline="") as csv_file:
-        writer = csv.DictWriter(csv_file, fieldnames=["LLM", "query", "num_results", "elapsed" ])
-        if not file_exists:
-            writer.writeheader()
-        writer.writerow(log_data)
-
 def get_pdf_file_name(file_path):
     # Extract the file name from the file path
     file_name = os.path.basename(file_path)
@@ -63,6 +46,7 @@ def get_pdf_file_name(file_path):
 
 class Timer:
     def __enter__(self):
+        
         self.start = time.perf_counter()
         return self
     

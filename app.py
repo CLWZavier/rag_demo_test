@@ -4,8 +4,9 @@ import uuid
 import torch
 import pandas as pd
 import gc
+import sys
 from constants.llm_details import MODELS
-
+from loguru import logger
 from transformers import (
     MllamaForConditionalGeneration, 
     AutoProcessor,
@@ -20,13 +21,15 @@ from utils import (
     update_image, 
     get_image_count, 
     Timer, 
-    save_logs_to_csv, 
     get_pdf_file_name
     )
 
 rag = Rag()
 
-print("Loading generation model...")
+# Setup logger
+logger.remove()
+logger.add(sys.stdout, format="{time} | {level} | {message} | {extra}", level="INFO")
+logger.add("logs/search.log", format="{time} | {level} | {message} | {extra}", level="INFO", rotation="100 MB")  # File log
 
 # Quantization config for generative model
 bnb_config = BitsAndBytesConfig(
@@ -174,13 +177,10 @@ class PDFSearchApp:
                         rag_response = Rag.get_answer_from_llama(query, img_paths, model, processor, num_results)
                     elif "qwen2_vl" in model.config.model_type:
                         rag_response = Rag.get_answer_from_qwen(query, img_paths, model, processor, num_results)
-                
-                print("Logging data...")
-                save_logs_to_csv(global_model_id, query, num_results, t, log_folder="logs")
 
-                # formatted_query = {"role": "user", "content": query}
-                # formatted_response = {"role": "assistant", "content": rag_response}
-                # formatted_metadata = {"title": "Generated using " + model}
+                # Contextualize the logger
+                childLogger = logger.bind(model_id=global_model_id, query=query, num_results=num_results, time=t.elapsed)
+                childLogger.info("Response generated")
 
                 history.append(
                     gr.ChatMessage(role="user", content=query)
@@ -279,7 +279,7 @@ def create_ui():
         # Tab for choosing LLM and settings its hyperparamters
         with gr.Tab("LLM Settings"):
             with gr.Row():
-                with gr.Column():
+                with gr.Column(scale=1):
                     model_dropdown = gr.Dropdown(
                         choices=MODELS.keys(),
                         value=current_model_id,
@@ -289,8 +289,8 @@ def create_ui():
                         scale=7
                     )
                     select_model_btn = gr.Button("Use model", scale=1)
-                with gr.Column():
-                    model_info = gr.Textbox(label="Model info")
+                with gr.Column(scale=2):
+                    model_info = gr.Textbox(label="Model info", lines=10)
 
         # Tab for ingesting documents
         with gr.Tab("Upload PDF"):

@@ -32,13 +32,10 @@ class Rag:
                 return_tensors="pt"
             ).to(model.device)
 
-            print("Generating output...")
-
             output = model.generate(**inputs, max_new_tokens=1024, temperature=0.5)
      
             num_input_tokens = inputs["input_ids"].shape[1]
             result = processor.decode(output[0][num_input_tokens:], skip_special_tokens=True)
-            print(result)
 
             return result
 
@@ -93,8 +90,6 @@ class Rag:
                 truncation=True
             ).to(model.device)
             
-            print("Generating output...")
-            
             # Generate response
             output = model.generate(
                 **inputs,
@@ -112,8 +107,7 @@ class Rag:
             # Clean up the response by removing the input prompt
             if result.startswith(input_text):
                 result = result[len(input_text):].strip()
-                
-            print(f"Generated response: {result}")
+            
             return result
             
         except Exception as e:
