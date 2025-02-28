@@ -183,10 +183,6 @@ class PDFSearchApp:
                 childLogger.info("Response generated")
 
                 history.append(
-                    gr.ChatMessage(role="user", content=query)
-                )
-
-                history.append(
                     gr.ChatMessage(role="assistant",
                                 content=rag_response,
                                 metadata={"title": "Generated using " + global_model_id})
@@ -218,6 +214,12 @@ class PDFSearchApp:
         except Exception as e:
             print(f"Error during search: {str(e)}")
             return None, f"Error during search: {str(e)}"
+        
+    def update_chatbot_query(self, query, history):
+        history.append(
+            gr.ChatMessage(role="user", content=query)
+        )
+        return history
 
 def load_model(model_id):
     """Loads model and processor with memory cleanup"""
@@ -281,8 +283,8 @@ def create_ui():
             with gr.Row():
                 with gr.Column(scale=1):
                     model_dropdown = gr.Dropdown(
-                        choices=MODELS.keys(),
-                        value=current_model_id,
+                        choices=list(MODELS.keys()),
+                        value=list(MODELS.keys())[0],  # Set default value to the first model
                         label="Select LLM model to use:",
                         filterable=True,
                         container=True,
@@ -419,12 +421,20 @@ def create_ui():
         
         # Event handlers - Tab for search
         search_btn.click(
+            fn=app.update_chatbot_query,
+            inputs=[query_input, chatbot],
+            outputs=[chatbot]
+        ).then(
             fn=app.search_documents,
             inputs=[query_input, chatbot, model_processor, num_results_slider],
             outputs=[images, chatbot]
         )
 
         query_input.submit(
+            fn=app.update_chatbot_query,
+            inputs=[query_input, chatbot],
+            outputs=[chatbot]
+        ).then(
             fn=app.search_documents,
             inputs=[query_input, chatbot, model_processor, num_results_slider],
             outputs=[images, chatbot]
