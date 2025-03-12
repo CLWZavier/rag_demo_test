@@ -12,7 +12,7 @@ class Rag:
                 {
                     "role": "system",
                     "content": [
-                        {"type": "text", "text": JAILBREAK_MESSAGE_LLAMA + TEST_MESSAGE}
+                        {"type": "text", "text": TEST_MESSAGE}
                     ]
                 },
                 {
@@ -67,7 +67,7 @@ class Rag:
                 {
                     "role": "system",
                     "content": [
-                        {"type": "text", "text": JAILBREAK_MESSAGE_QWEN + TEST_MESSAGE}
+                        {"type": "text", "text": JAILBREAK_MESSAGE_QWEN}
                     ]
                 },
                 {

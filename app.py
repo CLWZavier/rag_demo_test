@@ -132,11 +132,11 @@ class PDFSearchApp:
             containing the answer to the query.
         """
         if not self.indexed_docs:
-            return None, "Please index documents first"
+            return None, "Please index documents first", history
         if not query:
-            return None, "Please enter a search query"
+            return None, "Please enter a search query", history
         if not model_processor or not model_processor.get("model"):
-            return None, "No model loaded - select a model first"
+            return None, "No model loaded - select a model first", history
             
         try:
             img_paths = []
@@ -168,7 +168,7 @@ class PDFSearchApp:
                     page_nums.append(page_num)
 
                 if not img_paths:
-                    return None, "No matching images found"
+                    return None, "No matching images found", history
 
                 print(f"model.config.model_type = {model.config.model_type}")
 
@@ -179,7 +179,7 @@ class PDFSearchApp:
                         rag_response = Rag.get_answer_from_qwen(query, img_paths, model, processor, num_results)
 
                 # Contextualize the logger
-                childLogger = logger.bind(model_id=global_model_id, query=query, num_results=num_results, time=t.elapsed)
+                childLogger = logger.bind(model_id=global_model_id, query=query, num_results=num_results, rag_response=rag_response, time=t.elapsed)
                 childLogger.info("Response generated")
 
                 history.append(
@@ -187,10 +187,6 @@ class PDFSearchApp:
                                 content=rag_response,
                                 metadata={"title": "Generated using " + global_model_id})
                 )
-
-                # history.append(formatted_query)
-                # history.append(formatted_response)
-                # history.append(formatted_metadata)
 
                 # Display images retrieved in a gradio gallery
                 gallery_data = []
@@ -203,17 +199,17 @@ class PDFSearchApp:
                         continue
 
                 if not gallery_data:
-                    return None, "No valid images found"
+                    return None, "No valid images found", history
 
-                return gallery_data, history
+                return gallery_data, history, ""  # Return empty string to clear query input
 
             except Exception as e:
                 print(f"Error in processing results: {str(e)}")
-                return None, f"Error processing results: {str(e)}"
+                return None, f"Error processing results: {str(e)}", history
                 
         except Exception as e:
             print(f"Error during search: {str(e)}")
-            return None, f"Error during search: {str(e)}"
+            return None, f"Error during search: {str(e)}", history
         
     def update_chatbot_query(self, query, history):
         history.append(
@@ -383,7 +379,7 @@ def create_ui():
                         maximum=10,
                         value=3,
                         step=1,
-                        label="Number of results"
+                        label="Number of images to retrieve"
                     )
                     search_btn = gr.Button("Query")
                 with gr.Column():
@@ -427,7 +423,7 @@ def create_ui():
         ).then(
             fn=app.search_documents,
             inputs=[query_input, chatbot, model_processor, num_results_slider],
-            outputs=[images, chatbot]
+            outputs=[images, chatbot, query_input]  # Add query_input to clear it
         )
 
         query_input.submit(
@@ -437,7 +433,7 @@ def create_ui():
         ).then(
             fn=app.search_documents,
             inputs=[query_input, chatbot, model_processor, num_results_slider],
-            outputs=[images, chatbot]
+            outputs=[images, chatbot, query_input]  # Add query_input to clear it
         )
     
     return demo
