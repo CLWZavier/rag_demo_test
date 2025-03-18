@@ -142,7 +142,7 @@ class PDFSearchApp:
             img_paths = []
             doc_ids = []
             page_nums = []
-            search_results = middleware.search([query], num_results)[0]
+            search_results, retrieval_time = middleware.search([query], num_results)
             model = model_processor["model"]
             processor = model_processor["processor"]
 
@@ -177,9 +177,14 @@ class PDFSearchApp:
                         rag_response = Rag.get_answer_from_llama(query, img_paths, model, processor, num_results)
                     elif "qwen2_vl" in model.config.model_type:
                         rag_response = Rag.get_answer_from_qwen(query, img_paths, model, processor, num_results)
+                    else:
+                        rag_response = "Failed to generate a response."
+
+                if rag_response is None:
+                    rag_response = "Failed to generate a response."
 
                 # Contextualize the logger
-                childLogger = logger.bind(model_id=global_model_id, query=query, num_results=num_results, rag_response=rag_response, time=t.elapsed)
+                childLogger = logger.bind(model_id=global_model_id, query=query, num_results=num_results, rag_response=rag_response, retrieval_time=retrieval_time, generation_time=t.elapsed)
                 childLogger.info("Response generated")
 
                 history.append(
@@ -298,7 +303,7 @@ def create_ui():
                     
                     max_pages_input = gr.Slider(
                         minimum=1,
-                        maximum=1000,
+                        maximum=1500,
                         value=100,
                         step=10,
                         label="Max pages to extract and index"

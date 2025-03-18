@@ -1,5 +1,5 @@
 MODELS = {
-    "huihui-ai/Llama-3.2-11B-Vision-Instruct-abliterated": """
+    "meta-llama/Llama-3.2-11B-Vision-Instruct": """
         The Llama 3.2-Vision collection of multimodal large language models (LLMs) is a collection of pretrained and instruction-tuned image reasoning generative models in 11B and 90B sizes (text + images in / text out). The Llama 3.2-Vision instruction-tuned models are optimized for visual recognition, image reasoning, captioning, and answering general questions about an image. The models outperform many of the available open source and closed multimodal models on common industry benchmarks.
 
         Model Developer: Meta

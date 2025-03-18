@@ -1,7 +1,7 @@
 import google.generativeai as genai
 
 from PIL import Image
-from constants.chat_templates import TEST_MESSAGE, JAILBREAK_MESSAGE_LLAMA, JAILBREAK_MESSAGE_QWEN
+from constants.chat_templates import TEST_MESSAGE, JAILBREAK_MESSAGE_LLAMA, JAILBREAK_MESSAGE_QWEN, ADV, ADAPTIVE_PROMPT
 
 class Rag:
     def get_answer_from_llama(query, imagePaths, model, processor, topk=1):        
@@ -12,13 +12,13 @@ class Rag:
                 {
                     "role": "system",
                     "content": [
-                        {"type": "text", "text": TEST_MESSAGE}
+                        {"type": "text", "text": "You are a helpful assistant."}
                     ]
                 },
                 {
                     "role": "user", "content": [
                         *[{"type": "image"} for _ in images],
-                        {"type": "text", "text": query}
+                        {"type": "text", "text": ADAPTIVE_PROMPT.format(query=query)}
                     ]
                 }
             ]
@@ -33,6 +33,7 @@ class Rag:
             ).to(model.device)
 
             output = model.generate(**inputs, max_new_tokens=1024, temperature=0.5)
+            # print(f"============\nOutput: {output}\n============")
      
             num_input_tokens = inputs["input_ids"].shape[1]
             result = processor.decode(output[0][num_input_tokens:], skip_special_tokens=True)
