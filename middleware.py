@@ -55,14 +55,15 @@ class Middleware:
 
         for query in search_queries:
             print(f"Searching for query: {query}")
-            query_vec = colpali_manager.process_text([query])[0]
+            query_vec, query_embedding_time = colpali_manager.process_text([query])
+            query_vec = query_vec[0]
             search_res = self.milvus_manager.search(query_vec, topk=num_results)
             print(f"Search result: {search_res} for query: {query}")
 
             # Calculate time taken
-            total_time = sum(result[0] for result in search_res)
+            total_retrieval_time = sum(result[0] for result in search_res)
 
-        return search_res, total_time
+        return search_res, total_retrieval_time, query_embedding_time
 
     def list_index(self):
         return self.milvus_manager.get_indexed_file_names()

@@ -142,7 +142,7 @@ class PDFSearchApp:
             img_paths = []
             doc_ids = []
             page_nums = []
-            search_results, retrieval_time = middleware.search([query], num_results)
+            search_results, retrieval_time, query_embedding_time = middleware.search([query], num_results)
             model = model_processor["model"]
             processor = model_processor["processor"]
 
@@ -184,7 +184,7 @@ class PDFSearchApp:
                     rag_response = "Failed to generate a response."
 
                 # Contextualize the logger
-                childLogger = logger.bind(model_id=global_model_id, query=query, num_results=num_results, rag_response=rag_response, retrieval_time=retrieval_time, generation_time=t.elapsed)
+                childLogger = logger.bind(model_id=global_model_id, query=query, num_results=num_results, rag_response=rag_response, query_embedding_time=query_embedding_time, retrieval_time=retrieval_time, generation_time=t.elapsed)
                 childLogger.info("Response generated")
 
                 history.append(

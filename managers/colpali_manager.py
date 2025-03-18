@@ -3,6 +3,7 @@ from colpali_engine.models.paligemma.colpali.processing_colpali import ColPaliPr
 from colpali_engine.utils.processing_utils import BaseVisualRetrieverProcessor
 from colpali_engine.utils.torch_utils import ListDataset, get_torch_device
 from torch.utils.data import DataLoader
+from utils import Timer
 import torch
 from typing import List, cast
 
@@ -64,24 +65,25 @@ class ColpaliManager:
     def process_text(self, texts: list[str]):
         print(f"Processing {len(texts)} texts")
 
-        dataloader = DataLoader(
-            dataset=ListDataset[str](texts),
-            batch_size=1,
-            shuffle=False,
-            collate_fn=lambda x: processor.process_queries(x),
-        )
+        with Timer() as t:
+            dataloader = DataLoader(
+                dataset=ListDataset[str](texts),
+                batch_size=1,
+                shuffle=False,
+                collate_fn=lambda x: processor.process_queries(x),
+            )
 
-        qs: List[torch.Tensor] = []
-        for batch_query in dataloader:
-            with torch.no_grad():
-                batch_query = {k: v.to(model.device) for k, v in batch_query.items()}
-                embeddings_query = model(**batch_query)
+            qs: List[torch.Tensor] = []
+            for batch_query in dataloader:
+                with torch.no_grad():
+                    batch_query = {k: v.to(model.device) for k, v in batch_query.items()}
+                    embeddings_query = model(**batch_query)
 
-            qs.extend(list(torch.unbind(embeddings_query.to(device))))
+                qs.extend(list(torch.unbind(embeddings_query.to(device))))
 
-        qs_np = [q.float().cpu().numpy() for q in qs]
+            qs_np = [q.float().cpu().numpy() for q in qs]
 
-        return qs_np
+        return qs_np, t.elapsed
     
 
 
